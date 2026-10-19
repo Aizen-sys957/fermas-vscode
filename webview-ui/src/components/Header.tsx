@@ -22,10 +22,14 @@ export function Header() {
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 border-b border-[#1a2234] bg-[#080e19]/90 text-[11px]">
         {/* Brand & Engine Status */}
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 font-bold tracking-tight text-[#00f2fe]">
-            <span className="flex h-2 w-2 rounded-full bg-[#00f2fe] shadow-[0_0_8px_#00f2fe]" />
-            <span>Fermas</span>
-            <span className="font-mono text-[10px] font-normal text-[#94a3b8]">v2.4</span>
+          <div className="flex items-center gap-2 font-bold tracking-tight text-[#00f2fe]">
+            <svg viewBox="0 0 100 100" className="h-4 w-4 text-[#00f2fe] drop-shadow-[0_0_6px_rgba(0,242,254,0.7)]" fill="currentColor">
+              <path d="M 78.07 10.00 L 78.07 21.47 L 77.30 23.15 L 75.93 24.99 L 73.94 26.52 L 72.26 27.28 L 21.93 45.64 L 21.78 36.31 L 22.39 33.56 L 23.61 31.41 L 25.45 29.58 L 27.90 28.20 L 77.92 10.15 Z" />
+              <path d="M 59.41 37.53 L 61.55 37.53 L 76.85 41.20 L 77.00 43.96 L 76.54 45.64 L 75.93 46.56 L 73.63 48.39 L 42.89 58.49 L 23.15 49.62 L 59.25 37.69 Z" />
+              <path d="M 21.93 51.30 L 38.60 62.01 L 39.37 62.62 L 40.29 64.15 L 40.29 75.93 L 39.06 78.37 L 38.30 79.14 L 21.93 90.00 L 21.93 51.45 Z" />
+            </svg>
+            <span className="font-extrabold text-xs tracking-wider">FERMAS</span>
+            <span className="font-mono text-[9px] font-normal text-[#94a3b8]">v2.4</span>
           </div>
 
           <span className="hidden md:inline text-[#2a364f]">|</span>
