@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { FermasEngine } from '../engine/tracer';
-import { CurriculumService } from '../engine/curriculumServer';
+import { GitCurriculumService } from '../engine/gitCurriculumService';
 import { FermasDecorations } from './fermasDecorations';
 import { FermasInlayHintsProvider } from './fermasInlayHintsProvider';
 import { MemorySnapshot, SupportedLanguage } from '../engine/types';
@@ -23,7 +23,7 @@ export class FermasWebviewProvider implements vscode.WebviewViewProvider {
   private panel?: vscode.WebviewPanel;
 
   private readonly engine = new FermasEngine();
-  private readonly curriculum = new CurriculumService();
+  private readonly curriculum = new GitCurriculumService();
 
   private currentSnapshots: MemorySnapshot[] = [];
   private currentTick = 0;
@@ -38,7 +38,16 @@ export class FermasWebviewProvider implements vscode.WebviewViewProvider {
     private readonly extensionUri: vscode.Uri,
     private readonly decorations: FermasDecorations,
     private readonly inlayHints: FermasInlayHintsProvider,
-  ) {}
+    context?: vscode.ExtensionContext,
+  ) {
+    if (context) {
+      this.curriculum.setContext(context);
+    }
+  }
+
+  public setContext(context: vscode.ExtensionContext) {
+    this.curriculum.setContext(context);
+  }
 
   public onDocumentChange(doc: vscode.TextDocument): void {
     if (!this.isLiveSyncEnabled) return;
@@ -138,8 +147,15 @@ export class FermasWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   public async openCurriculumBrowser(): Promise<void> {
-    const modules = await this.curriculum.fetchCurriculum();
-    this.postToWebviews({ type: 'OPEN_CURRICULUM', modules });
+    const modules = this.curriculum.getModules();
+    const sources = this.curriculum.getSources();
+    const activeSourceId = this.curriculum.getActiveSourceId();
+    this.postToWebviews({
+      type: 'OPEN_CURRICULUM',
+      modules,
+      sources,
+      activeSourceId,
+    });
   }
 
   public stepForward(): void {
@@ -190,8 +206,15 @@ export class FermasWebviewProvider implements vscode.WebviewViewProvider {
           break;
         }
         case 'REQUEST_CURRICULUM': {
-          const modules = await this.curriculum.fetchCurriculum();
-          webview.postMessage({ type: 'SET_CURRICULUM', modules });
+          const modules = this.curriculum.getModules();
+          const sources = this.curriculum.getSources();
+          const activeSourceId = this.curriculum.getActiveSourceId();
+          webview.postMessage({
+            type: 'SET_CURRICULUM',
+            modules,
+            sources,
+            activeSourceId,
+          });
           break;
         }
         case 'LOAD_MODULE': {
@@ -211,12 +234,61 @@ export class FermasWebviewProvider implements vscode.WebviewViewProvider {
           this.postToWebviews({ type: 'SET_LIVE_SYNC', enabled: this.isLiveSyncEnabled });
           break;
         }
+        case 'IMPORT_GIT_REPO':
         case 'IMPORT_GITHUB': {
-          await this.importFromGitHub(
+          await this.importFromGitRepo(
             String(message.repoUrl || ''),
             String(message.branch || 'main'),
-            String(message.path || '')
+            String(message.path || 'fermas.json')
           );
+          break;
+        }
+        case 'SELECT_CURRICULUM_SOURCE': {
+          const sourceId = String(message.sourceId);
+          const modules = await this.curriculum.selectSource(sourceId);
+          const sources = this.curriculum.getSources();
+          const activeSourceId = this.curriculum.getActiveSourceId();
+          this.postToWebviews({
+            type: 'SET_CURRICULUM',
+            modules,
+            sources,
+            activeSourceId,
+          });
+          break;
+        }
+        case 'DELETE_CURRICULUM_SOURCE': {
+          const sourceId = String(message.sourceId);
+          const modules = await this.curriculum.deleteSource(sourceId);
+          const sources = this.curriculum.getSources();
+          const activeSourceId = this.curriculum.getActiveSourceId();
+          this.postToWebviews({
+            type: 'SET_CURRICULUM',
+            modules,
+            sources,
+            activeSourceId,
+          });
+          break;
+        }
+        case 'REFRESH_CURRICULUM': {
+          const activeId = this.curriculum.getActiveSourceId();
+          if (activeId !== 'builtin') {
+            const src = this.curriculum.getSources().find(s => s.id === activeId);
+            if (src) {
+              await this.importFromGitRepo(src.repoUrl, src.branch, src.manifestPath);
+            }
+          } else {
+            const modules = this.curriculum.getModules();
+            this.postToWebviews({
+              type: 'SET_CURRICULUM',
+              modules,
+              sources: this.curriculum.getSources(),
+              activeSourceId: 'builtin',
+            });
+          }
+          break;
+        }
+        case 'EXPORT_TEMPLATE': {
+          await this.exportCurriculumTemplate();
           break;
         }
         case 'REVEAL_LINE': {
@@ -231,86 +303,96 @@ export class FermasWebviewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  private async importFromGitHub(repoInput: string, branch: string, filePath: string): Promise<void> {
+  private async importFromGitRepo(repoInput: string, branch: string, manifestPath: string): Promise<void> {
     try {
-      // Clean up input
-      let rawUrl = '';
-      const trimmed = repoInput.trim().replace(/^https?:\/\//, '');
-
-      if (trimmed.startsWith('raw.githubusercontent.com/')) {
-        rawUrl = `https://${trimmed}`;
-      } else if (trimmed.startsWith('github.com/')) {
-        const parts = trimmed.replace('github.com/', '').split('/');
-        const owner = parts[0];
-        const repo = parts[1];
-        const subPath = parts.slice(2).join('/') || filePath || 'solution.ts';
-        rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch || 'main'}/${subPath}`;
-      } else {
-        const parts = trimmed.split('/');
-        if (parts.length >= 2) {
-          const owner = parts[0];
-          const repo = parts[1];
-          const subPath = parts.slice(2).join('/') || filePath || 'solution.ts';
-          rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch || 'main'}/${subPath}`;
-        }
+      if (!repoInput.trim()) {
+        throw new Error('Please enter a GitHub repository (e.g. owner/repo or github.com/owner/repo)');
       }
 
-      if (!rawUrl) {
-        throw new Error('Please provide a valid GitHub repo format (e.g. github.com/owner/repo)');
-      }
+      vscode.window.showInformationMessage(`Importing DSA tutorials from ${repoInput}...`);
+      const source = await this.curriculum.importFromGit(repoInput, branch, manifestPath);
 
-      const res = await fetch(rawUrl);
-      if (!res.ok) {
-        throw new Error(`Failed to fetch from GitHub (HTTP ${res.status}): ${rawUrl}`);
-      }
+      vscode.window.showInformationMessage(
+        `Successfully imported "${source.name}" with ${source.modules.length} modules from Git!`
+      );
 
-      const code = await res.text();
-      const detectedLang = rawUrl.endsWith('.py')
-        ? 'python'
-        : rawUrl.endsWith('.rs')
-        ? 'rust'
-        : rawUrl.endsWith('.ts')
-        ? 'typescript'
-        : 'javascript';
-
-      this.currentLanguage = detectedLang;
-      this.currentFileName = rawUrl.split('/').pop() || 'github-solution.ts';
-
-      const result = this.engine.trace(code, detectedLang);
-      this.currentSnapshots = result.snapshots;
-      this.currentTick = 0;
-      this.currentError = result.error;
+      const modules = this.curriculum.getModules();
+      const sources = this.curriculum.getSources();
+      const activeSourceId = this.curriculum.getActiveSourceId();
 
       this.postToWebviews({
-        type: 'SET_TRACE',
-        snapshots: this.currentSnapshots,
-        language: this.currentLanguage,
-        currentTick: 0,
-        fileName: this.currentFileName,
-        error: this.currentError,
+        type: 'SET_CURRICULUM',
+        modules,
+        sources,
+        activeSourceId,
       });
 
-      // Open in VS Code editor
-      const doc = await vscode.workspace.openTextDocument({
-        content: code,
-        language: detectedLang,
-      });
-      await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
-      this.syncStepToEditor(0);
+      // Automatically trace first problem
+      if (source.modules.length > 0) {
+        await this.loadModule(source.modules[0].id);
+      }
     } catch (err: any) {
-      vscode.window.showErrorMessage(`GitHub Ingestion: ${err?.message || err}`);
+      vscode.window.showErrorMessage(`Git Import: ${err?.message || err}`);
       this.postToWebviews({
         type: 'SET_ERROR',
-        message: `GitHub Ingestion Error: ${err?.message || err}`
+        message: `Git Curriculum Ingestion Error: ${err?.message || err}`
       });
     }
   }
 
+  private async exportCurriculumTemplate(): Promise<void> {
+    try {
+      const template = this.curriculum.generateStarterTemplate();
+      const wsFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!wsFolder) {
+        vscode.window.showErrorMessage('Please open a folder or workspace in VS Code to export the tutorial template.');
+        return;
+      }
+
+      const rootUri = wsFolder.uri;
+      await vscode.workspace.fs.writeFile(
+        vscode.Uri.joinPath(rootUri, 'fermas.json'),
+        Buffer.from(template.manifest, 'utf-8')
+      );
+      await vscode.workspace.fs.writeFile(
+        vscode.Uri.joinPath(rootUri, 'README.md'),
+        Buffer.from(template.readmeMd, 'utf-8')
+      );
+
+      const probFolder = vscode.Uri.joinPath(rootUri, 'problems');
+      await vscode.workspace.fs.createDirectory(probFolder);
+
+      const t1 = vscode.Uri.joinPath(probFolder, 'two-sum');
+      await vscode.workspace.fs.createDirectory(t1);
+      await vscode.workspace.fs.writeFile(
+        vscode.Uri.joinPath(t1, 'solution.ts'),
+        Buffer.from(template.sampleProblemTs, 'utf-8')
+      );
+
+      const t2 = vscode.Uri.joinPath(probFolder, 'valid-palindrome');
+      await vscode.workspace.fs.createDirectory(t2);
+      await vscode.workspace.fs.writeFile(
+        vscode.Uri.joinPath(t2, 'solution.py'),
+        Buffer.from(template.sampleProblemPy, 'utf-8')
+      );
+
+      const t3 = vscode.Uri.joinPath(probFolder, 'three-sum');
+      await vscode.workspace.fs.createDirectory(t3);
+      await vscode.workspace.fs.writeFile(
+        vscode.Uri.joinPath(t3, 'solution.rs'),
+        Buffer.from(template.sampleProblemRs, 'utf-8')
+      );
+
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(rootUri, 'fermas.json'));
+      await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+      vscode.window.showInformationMessage('Created Fermas DSA Tutorial template (fermas.json + problems/) in workspace!');
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Export Template Error: ${err?.message || err}`);
+    }
+  }
 
   private async loadModule(id: string): Promise<void> {
-    const module = await this.curriculum.fetchCurriculum().then((modules) =>
-      modules.find((candidate) => candidate.id === id),
-    );
+    const module = this.curriculum.getModuleById(id);
     if (!module) return;
 
     this.currentLanguage = module.language;

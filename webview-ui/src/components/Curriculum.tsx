@@ -41,7 +41,7 @@ export function Curriculum() {
             <h3 className="mb-0.5 text-[12px] font-semibold leading-snug">{module.title}</h3>
             <p className="mb-1.5 text-[11px] leading-snug text-muted">{module.description}</p>
             <div className="flex flex-wrap items-center gap-1">
-              {module.tags.slice(0, 3).map((tag) => (
+              {(module.tags ?? []).slice(0, 3).map((tag) => (
                 <span key={tag} className="font-mono text-[10px] text-muted">
                   #{tag}
                 </span>

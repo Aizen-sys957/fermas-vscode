@@ -10,8 +10,10 @@ import type {
   CallTreeNode,
   ConcurrencyState,
   CurriculumModule,
+  CurriculumRepoManifest,
   DebuggerDiagnostic,
   HeapObject,
+  ImportedCurriculumSource,
   InferredPointer,
   MemoryDiff,
   MemorySnapshot,
@@ -26,8 +28,10 @@ export type {
   CallTreeNode,
   ConcurrencyState,
   CurriculumModule,
+  CurriculumRepoManifest,
   DebuggerDiagnostic,
   HeapObject,
+  ImportedCurriculumSource,
   InferredPointer,
   MemoryDiff,
   MemorySnapshot,
@@ -66,8 +70,18 @@ export type HostMessage =
       error?: string;
     }
   | { type: 'GOTO_TICK'; tick: number }
-  | { type: 'SET_CURRICULUM'; modules: CurriculumModule[] }
-  | { type: 'OPEN_CURRICULUM'; modules: CurriculumModule[] }
+  | {
+      type: 'SET_CURRICULUM';
+      modules: CurriculumModule[];
+      sources?: ImportedCurriculumSource[];
+      activeSourceId?: string;
+    }
+  | {
+      type: 'OPEN_CURRICULUM';
+      modules: CurriculumModule[];
+      sources?: ImportedCurriculumSource[];
+      activeSourceId?: string;
+    }
   | { type: 'SET_LIVE_SYNC'; enabled: boolean }
   | { type: 'SET_ERROR'; message: string };
 
@@ -83,6 +97,11 @@ export type WebviewMessage =
   | { type: 'OPEN_PANEL' }
   | { type: 'REVEAL_LINE'; line: number }
   | { type: 'IMPORT_GITHUB'; repoUrl: string; branch?: string; path?: string }
+  | { type: 'IMPORT_GIT_REPO'; repoUrl: string; branch?: string; path?: string }
+  | { type: 'SELECT_CURRICULUM_SOURCE'; sourceId: string }
+  | { type: 'DELETE_CURRICULUM_SOURCE'; sourceId: string }
+  | { type: 'REFRESH_CURRICULUM' }
+  | { type: 'EXPORT_TEMPLATE' }
   | { type: 'TOGGLE_LIVE_SYNC'; enabled: boolean };
 
 /** Persisted across panel hides via vscode.setState(). */

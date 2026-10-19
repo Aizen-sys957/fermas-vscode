@@ -212,28 +212,57 @@ console.log("2: Synchronous Script End");`,
   },
 ];
 
-const CATEGORIES = [
-  'All',
-  'Two Pointers',
-  'Trees & Graphs',
-  'Dynamic Programming',
-  'Sorting & Partitioning',
-  'Concurrency & Event Loop',
-  'Rust Borrow Check',
-];
-
 export function AlgorithmHubView() {
-  const { loadModule, importGitHub, state } = useStore();
+  const {
+    loadModule,
+    importGitRepo,
+    selectCurriculumSource,
+    deleteCurriculumSource,
+    refreshCurriculum,
+    exportTemplate,
+    state,
+  } = useStore();
 
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [repoUrl, setRepoUrl] = useState('github.com/torvalds/algo-bench/src/two-pointer');
+  const [repoUrl, setRepoUrl] = useState('');
   const [branch, setBranch] = useState('main');
-  const [filePath, setFilePath] = useState('solution.ts');
+  const [manifestPath, setManifestPath] = useState('fermas.json');
   const [isImporting, setIsImporting] = useState(false);
+  const [showImporter, setShowImporter] = useState(false);
+
+  // Use modules from active curriculum source or fallback to builtins
+  const allAlgorithms: AlgorithmEntry[] = useMemo(() => {
+    if (state.modules && state.modules.length > 0) {
+      return state.modules.map((m) => {
+        const langCode = (m.language === 'rust' ? 'RS' : m.language === 'python' ? 'PY' : 'TS') as 'TS' | 'PY' | 'RS' | 'JS';
+        return {
+          id: m.id,
+          title: m.title,
+          category: m.category || 'General Algorithms',
+          difficulty: (m.difficulty?.toUpperCase() || 'MEDIUM') as 'EASY' | 'MEDIUM' | 'HARD',
+          description: m.description || '',
+          timeComplexity: m.timeComplexity || 'O(n)',
+          spaceComplexity: m.spaceComplexity || 'O(1)',
+          languages: [langCode],
+          ticks: 20,
+          code: m.code || '',
+        };
+      });
+    }
+    return BUILTIN_ALGORITHMS;
+  }, [state.modules]);
+
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const algo of allAlgorithms) {
+      if (algo.category) set.add(algo.category);
+    }
+    return ['All', ...Array.from(set)];
+  }, [allAlgorithms]);
 
   const filteredAlgorithms = useMemo(() => {
-    return BUILTIN_ALGORITHMS.filter((algo) => {
+    return allAlgorithms.filter((algo) => {
       const matchesCategory = selectedCategory === 'All' || algo.category === selectedCategory;
       const matchesSearch =
         search.trim() === '' ||
@@ -242,15 +271,17 @@ export function AlgorithmHubView() {
         algo.category.toLowerCase().includes(search.toLowerCase());
       return matchesCategory && matchesSearch;
     });
-  }, [search, selectedCategory]);
+  }, [allAlgorithms, search, selectedCategory]);
 
-  const handleImportGitHub = async () => {
-    if (!repoUrl) return;
+  const handleImportGitRepo = async () => {
+    if (!repoUrl.trim()) return;
     setIsImporting(true);
     try {
-      importGitHub(repoUrl, branch, filePath);
+      importGitRepo(repoUrl.trim(), branch.trim() || 'main', manifestPath.trim() || 'fermas.json');
+      setRepoUrl('');
+      setShowImporter(false);
     } finally {
-      setTimeout(() => setIsImporting(false), 800);
+      setIsImporting(false);
     }
   };
 
@@ -261,9 +292,9 @@ export function AlgorithmHubView() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-1.5 text-[10px] uppercase font-semibold text-[var(--vscode-textLink-foreground,#3794ff)]">
-              <span>Curriculum &amp; Remote Ingestion</span>
+              <span>Community DSA Curriculum &amp; Git Engine</span>
               <span className="text-[var(--vscode-descriptionForeground,#8c8c8c)]">•</span>
-              <span className="font-mono text-[var(--vscode-descriptionForeground,#8c8c8c)]">AST Instrumenter v2.4</span>
+              <span className="font-mono text-[var(--vscode-descriptionForeground,#8c8c8c)]">AST Interpreter v2.4</span>
             </div>
             <h2 className="text-base font-bold text-[var(--vscode-foreground,#ffffff)] tracking-tight">
               Fermas Algorithm Curriculum &amp; Dynamic Code Sandbox
@@ -277,22 +308,128 @@ export function AlgorithmHubView() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter by algorithm, data structure, or tag..."
-              className="w-full rounded bg-[var(--vscode-input-background,#1e1e1e)] border border-[var(--vscode-input-border,#3c3c3c)] pl-8 pr-12 py-1.5 text-xs text-[var(--vscode-input-foreground,#cccccc)] placeholder:text-[var(--vscode-input-placeholderForeground,#8c8c8c)] outline-none focus:border-[var(--vscode-focusBorder,#007fd4)] transition-colors"
+              className="w-full rounded bg-[var(--vscode-input-background,#1e1e1e)] border border-[var(--vscode-input-border,#3c3c3c)] pl-8 pr-4 py-1.5 text-xs text-[var(--vscode-input-foreground,#cccccc)] placeholder:text-[var(--vscode-input-placeholderForeground,#8c8c8c)] outline-none focus:border-[var(--vscode-focusBorder,#007fd4)] transition-colors"
             />
             <span className="absolute left-2.5 top-2 text-xs text-[var(--vscode-descriptionForeground,#8c8c8c)]">🔍</span>
-            <span className="absolute right-2 top-1.5 font-mono text-[9px] bg-[var(--vscode-badge-background,#4d4d4d)] text-[var(--vscode-badge-foreground,#ffffff)] px-1.5 py-0.5 rounded border border-[var(--vscode-panel-border,#333333)]">
-              ⌘K
-            </span>
           </div>
         </div>
 
+        {/* Source Selector & Management Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[var(--vscode-panel-border,#333333)]">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[var(--vscode-descriptionForeground,#8c8c8c)] font-medium">Curriculum Source:</span>
+            <select
+              aria-label="Curriculum Source"
+              value={state.activeSourceId || 'builtin'}
+              onChange={(e) => selectCurriculumSource(e.target.value)}
+              className="rounded bg-[var(--vscode-dropdown-background,#252526)] border border-[var(--vscode-dropdown-border,#3c3c3c)] px-2 py-1 text-xs font-mono text-[var(--vscode-dropdown-foreground,#cccccc)] outline-none cursor-pointer focus:border-[var(--vscode-focusBorder,#007fd4)]"
+            >
+              <option value="builtin">Built-in (Offline Presets)</option>
+              {(state.sources || []).map((src) => (
+                <option key={src.id} value={src.id}>
+                  {src.name} ({src.branch})
+                </option>
+              ))}
+            </select>
+
+            {state.activeSourceId && state.activeSourceId !== 'builtin' && (
+              <button
+                type="button"
+                title="Delete this imported repository"
+                onClick={() => deleteCurriculumSource(state.activeSourceId)}
+                className="px-2 py-0.5 rounded bg-[var(--vscode-button-secondaryBackground,#3a3d41)] hover:bg-[#a82a2a] text-[var(--vscode-button-secondaryForeground,#cccccc)] hover:text-white text-xs transition-colors"
+              >
+                ✕
+              </button>
+            )}
+
+            <button
+              type="button"
+              title="Refresh active curriculum"
+              onClick={refreshCurriculum}
+              className="px-2 py-1 rounded bg-[var(--vscode-button-secondaryBackground,#3a3d41)] hover:bg-[var(--vscode-button-secondaryHoverBackground,#45494e)] text-[var(--vscode-button-secondaryForeground,#cccccc)] text-xs transition-colors"
+            >
+              ↻
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowImporter(!showImporter)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-[var(--vscode-button-background,#0e639c)] text-[var(--vscode-button-foreground,#ffffff)] text-xs font-medium hover:bg-[var(--vscode-button-hoverBackground,#1177bb)] transition-colors"
+            >
+              <span>+</span>
+              <span>Import Git Repo</span>
+            </button>
+
+            <button
+              type="button"
+              title="Export starter fermas.json and problem templates to workspace"
+              onClick={exportTemplate}
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-[var(--vscode-button-secondaryBackground,#3a3d41)] hover:bg-[var(--vscode-button-secondaryHoverBackground,#45494e)] text-[var(--vscode-button-secondaryForeground,#cccccc)] text-xs transition-colors"
+            >
+              <span>⭳</span>
+              <span>Export Template</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Expandable Git Ingester */}
+        {showImporter && (
+          <div className="rounded bg-[var(--vscode-editor-background,#1e1e1e)] p-2.5 border border-[var(--vscode-focusBorder,#007fd4)] flex flex-col gap-2 shadow-sm">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-[var(--vscode-foreground,#ffffff)]">Import Git DSA Tutorial Repo</span>
+              <span className="text-[10px] text-[var(--vscode-descriptionForeground,#8c8c8c)]">
+                Direct raw Git fetch — No backend server needed
+              </span>
+            </div>
+
+            <div className="flex flex-wrap lg:flex-nowrap items-center gap-2">
+              <input
+                type="text"
+                value={repoUrl}
+                onChange={(e) => setRepoUrl(e.target.value)}
+                placeholder="github.com/owner/repo or https://github.com/..."
+                className="flex-1 min-w-[200px] rounded bg-[var(--vscode-input-background,#1e1e1e)] border border-[var(--vscode-input-border,#3c3c3c)] px-2.5 py-1 text-xs font-mono text-[var(--vscode-input-foreground,#cccccc)] placeholder:text-[var(--vscode-input-placeholderForeground,#8c8c8c)] outline-none focus:border-[var(--vscode-focusBorder,#007fd4)]"
+              />
+
+              <input
+                type="text"
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                placeholder="main"
+                className="w-20 rounded bg-[var(--vscode-input-background,#1e1e1e)] border border-[var(--vscode-input-border,#3c3c3c)] px-2 py-1 text-xs font-mono text-[var(--vscode-input-foreground,#cccccc)] outline-none focus:border-[var(--vscode-focusBorder,#007fd4)]"
+              />
+
+              <input
+                type="text"
+                value={manifestPath}
+                onChange={(e) => setManifestPath(e.target.value)}
+                placeholder="fermas.json"
+                className="w-24 rounded bg-[var(--vscode-input-background,#1e1e1e)] border border-[var(--vscode-input-border,#3c3c3c)] px-2 py-1 text-xs font-mono text-[var(--vscode-input-foreground,#cccccc)] outline-none focus:border-[var(--vscode-focusBorder,#007fd4)]"
+              />
+
+              <button
+                type="button"
+                disabled={isImporting || !repoUrl.trim()}
+                onClick={handleImportGitRepo}
+                className="flex items-center justify-center gap-1.5 px-3 py-1 rounded bg-[var(--vscode-button-background,#0e639c)] text-[var(--vscode-button-foreground,#ffffff)] font-medium text-xs hover:bg-[var(--vscode-button-hoverBackground,#1177bb)] transition-colors disabled:opacity-50 shrink-0"
+              >
+                <span>{isImporting ? '⏳' : '⚡'}</span>
+                <span>{isImporting ? 'Ingesting...' : 'Import'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Category Filter Chips */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-          {CATEGORIES.map((cat) => {
+          {categories.map((cat) => {
             const count =
               cat === 'All'
-                ? BUILTIN_ALGORITHMS.length
-                : BUILTIN_ALGORITHMS.filter((a) => a.category === cat).length;
+                ? allAlgorithms.length
+                : allAlgorithms.filter((a) => a.category === cat).length;
             const isSelected = selectedCategory === cat;
             return (
               <button
@@ -312,63 +449,6 @@ export function AlgorithmHubView() {
               </button>
             );
           })}
-        </div>
-
-        {/* REMOTE GITHUB INGESTION ACTION BAR */}
-        <div className="rounded bg-[var(--vscode-editor-background,#1e1e1e)] p-2.5 border border-[var(--vscode-panel-border,#333333)] flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5 shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-[var(--vscode-textLink-foreground,#3794ff)] text-lg">⚡</span>
-            <div className="flex flex-col">
-              <span className="text-xs font-semibold text-[var(--vscode-foreground,#ffffff)]">Remote Trace Importer</span>
-              <span className="text-[10px] text-[var(--vscode-descriptionForeground,#8c8c8c)]">Transpile &amp; inject live bytecode instrumenter hooks</span>
-            </div>
-          </div>
-
-          <div className="flex-1 flex flex-wrap lg:flex-nowrap items-center gap-2">
-            {/* Repo Input */}
-            <div className="relative flex-1 min-w-[200px]">
-              <span className="absolute left-2 top-2 text-[11px] text-[var(--vscode-descriptionForeground,#8c8c8c)]">📂</span>
-              <input
-                type="text"
-                value={repoUrl}
-                onChange={(e) => setRepoUrl(e.target.value)}
-                placeholder="github.com/owner/repo/path"
-                className="w-full rounded bg-[var(--vscode-input-background,#1e1e1e)] border border-[var(--vscode-input-border,#3c3c3c)] pl-6 pr-2 py-1 text-xs font-mono text-[var(--vscode-input-foreground,#cccccc)] placeholder:text-[var(--vscode-input-placeholderForeground,#8c8c8c)] outline-none focus:border-[var(--vscode-focusBorder,#007fd4)]"
-              />
-            </div>
-
-            {/* Branch Selector */}
-            <select
-              aria-label="GitHub Branch"
-              value={branch}
-              onChange={(e) => setBranch(e.target.value)}
-              className="rounded bg-[var(--vscode-dropdown-background,#252526)] border border-[var(--vscode-dropdown-border,#3c3c3c)] px-2 py-1 text-xs font-mono text-[var(--vscode-dropdown-foreground,#cccccc)] outline-none cursor-pointer focus:border-[var(--vscode-focusBorder,#007fd4)]"
-            >
-              <option value="main">main</option>
-              <option value="master">master</option>
-              <option value="dev">dev</option>
-            </select>
-
-            {/* File Path */}
-            <input
-              type="text"
-              value={filePath}
-              onChange={(e) => setFilePath(e.target.value)}
-              placeholder="solution.ts"
-              className="w-24 rounded bg-[var(--vscode-input-background,#1e1e1e)] border border-[var(--vscode-input-border,#3c3c3c)] px-2 py-1 text-xs font-mono text-[var(--vscode-input-foreground,#cccccc)] outline-none focus:border-[var(--vscode-focusBorder,#007fd4)]"
-            />
-
-            {/* Import Button */}
-            <button
-              type="button"
-              disabled={isImporting}
-              onClick={handleImportGitHub}
-              className="flex items-center justify-center gap-1.5 px-3 py-1 rounded bg-[var(--vscode-button-background,#0e639c)] text-[var(--vscode-button-foreground,#ffffff)] font-medium text-xs hover:bg-[var(--vscode-button-hoverBackground,#1177bb)] transition-colors disabled:opacity-50 shrink-0"
-            >
-              <span>{isImporting ? '⏳' : '⚡'}</span>
-              <span>{isImporting ? 'Ingesting...' : 'Import & Instrument AST'}</span>
-            </button>
-          </div>
         </div>
       </section>
 

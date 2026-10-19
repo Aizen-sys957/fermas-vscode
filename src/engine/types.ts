@@ -143,12 +143,53 @@ export interface QuizQuestion {
 export interface CurriculumModule {
   id: string;
   title: string;
-  category: 'Algorithms & DSA' | 'Concurrency & Runtimes' | 'Memory & Pointers';
+  category: string;
   language: SupportedLanguage;
-  difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+  difficulty: 'Beginner' | 'Intermediate' | 'Advanced' | 'EASY' | 'MEDIUM' | 'HARD';
   description: string;
   code: string;
+  timeComplexity?: string;
+  spaceComplexity?: string;
+  ticks?: number;
+  entry?: string;
   quiz?: QuizQuestion;
-  tags: string[];
+  tags?: string[];
+  author?: string;
+}
+
+export interface CurriculumRepoManifest {
+  name: string;
+  version?: string;
+  description?: string;
+  author?: string;
+  repository?: string;
+  modules: Array<{
+    id: string;
+    title: string;
+    category?: string;
+    language?: SupportedLanguage;
+    difficulty?: 'Beginner' | 'Intermediate' | 'Advanced' | 'EASY' | 'MEDIUM' | 'HARD';
+    description?: string;
+    timeComplexity?: string;
+    spaceComplexity?: string;
+    ticks?: number;
+    tags?: string[];
+    entry?: string;
+    code?: string;
+    quiz?: QuizQuestion;
+    author?: string;
+  }>;
+}
+
+export interface ImportedCurriculumSource {
+  id: string;
+  name: string;
+  repoUrl: string;
+  branch: string;
+  manifestPath: string;
+  description?: string;
+  author?: string;
+  modules: CurriculumModule[];
+  importedAt: string;
 }
 

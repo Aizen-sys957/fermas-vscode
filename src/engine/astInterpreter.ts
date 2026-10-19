@@ -187,6 +187,61 @@ export class AstInterpreter {
 
     if (ts.isVariableStatement(node)) {
       for (const decl of node.declarationList.declarations) {
+        // 1. Array Binding Pattern: let [a, b] = [1, 2]
+        if (ts.isArrayBindingPattern(decl.name)) {
+          const rhs = decl.initializer ? this.evalExpression(decl.initializer, frame) : [];
+          decl.name.elements.forEach((elem, idx) => {
+            if (ts.isBindingElement(elem) && ts.isIdentifier(elem.name)) {
+              const varName = elem.name.text;
+              const val = Array.isArray(rhs) ? rhs[idx] : undefined;
+              frame.rawScope[varName] = val;
+              if (Array.isArray(val)) {
+                this.allocateHeapArray(varName, val);
+              } else if (val && typeof val === 'object' && !this.rawObjectToHeapId.has(val)) {
+                this.allocateHeapObject(val);
+              }
+              const formatted = this.formatVal(val);
+              this.recordSnapshot(
+                line,
+                lineText,
+                'step',
+                `Destructured variable '${varName}' initialized to ${formatted}`,
+                frame,
+                `[${varName} = ${formatted}]`
+              );
+            }
+          });
+          continue;
+        }
+
+        // 2. Object Binding Pattern: let { a, b } = obj
+        if (ts.isObjectBindingPattern(decl.name)) {
+          const rhs = decl.initializer ? this.evalExpression(decl.initializer, frame) : {};
+          for (const elem of decl.name.elements) {
+            if (ts.isBindingElement(elem) && ts.isIdentifier(elem.name)) {
+              const varName = elem.name.text;
+              const propName = (elem.propertyName && ts.isIdentifier(elem.propertyName)) ? elem.propertyName.text : varName;
+              const val = rhs ? rhs[propName] : undefined;
+              frame.rawScope[varName] = val;
+              if (Array.isArray(val)) {
+                this.allocateHeapArray(varName, val);
+              } else if (val && typeof val === 'object' && !this.rawObjectToHeapId.has(val)) {
+                this.allocateHeapObject(val);
+              }
+              const formatted = this.formatVal(val);
+              this.recordSnapshot(
+                line,
+                lineText,
+                'step',
+                `Destructured variable '${varName}' initialized to ${formatted}`,
+                frame,
+                `[${varName} = ${formatted}]`
+              );
+            }
+          }
+          continue;
+        }
+
         const varName = decl.name.getText(this.sourceFile);
         let val: any = undefined;
         if (decl.initializer) {
@@ -544,11 +599,19 @@ export class AstInterpreter {
     if (ts.isBinaryExpression(expr)) {
       const op = expr.operatorToken.kind;
 
-      // Assignment operations: x = ..., arr[i] = ..., node.next = ..., x += ...
+      // Assignment operations: x = ..., [a, b] = ..., arr[i] = ..., node.next = ..., x += ...
       if (op === ts.SyntaxKind.EqualsToken) {
         const rhs = this.evalExpression(expr.right, frame);
         if (ts.isIdentifier(expr.left)) {
           this.setVariable(expr.left.text, rhs, frame);
+        } else if (ts.isArrayLiteralExpression(expr.left)) {
+          // Destructuring assignment: [a, b] = [1, 2]
+          expr.left.elements.forEach((elem, idx) => {
+            if (ts.isIdentifier(elem)) {
+              const val = Array.isArray(rhs) ? rhs[idx] : undefined;
+              this.setVariable(elem.text, val, frame);
+            }
+          });
         } else if (ts.isElementAccessExpression(expr.left)) {
           const arr = this.evalExpression(expr.left.expression, frame);
           const idx = this.evalExpression(expr.left.argumentExpression, frame);
@@ -598,6 +661,25 @@ export class AstInterpreter {
         return cur - rhs;
       }
 
+      // Short-circuit logical operations: DO NOT evaluate rhs if lhs determines the result!
+      if (op === ts.SyntaxKind.AmpersandAmpersandToken) {
+        const lhs = this.evalExpression(expr.left, frame);
+        if (!lhs) return lhs;
+        return this.evalExpression(expr.right, frame);
+      }
+
+      if (op === ts.SyntaxKind.BarBarToken) {
+        const lhs = this.evalExpression(expr.left, frame);
+        if (lhs) return lhs;
+        return this.evalExpression(expr.right, frame);
+      }
+
+      if (op === ts.SyntaxKind.QuestionQuestionToken) {
+        const lhs = this.evalExpression(expr.left, frame);
+        if (lhs !== null && lhs !== undefined) return lhs;
+        return this.evalExpression(expr.right, frame);
+      }
+
       const lhs = this.evalExpression(expr.left, frame);
       const rhs = this.evalExpression(expr.right, frame);
 
@@ -615,8 +697,6 @@ export class AstInterpreter {
         case ts.SyntaxKind.LessThanEqualsToken: return lhs <= rhs;
         case ts.SyntaxKind.GreaterThanToken: return lhs > rhs;
         case ts.SyntaxKind.GreaterThanEqualsToken: return lhs >= rhs;
-        case ts.SyntaxKind.AmpersandAmpersandToken: return lhs && rhs;
-        case ts.SyntaxKind.BarBarToken: return lhs || rhs;
         default: return undefined;
       }
     }
@@ -640,11 +720,15 @@ export class AstInterpreter {
       return undefined;
     }
 
-    // Property access: arr.length or node.val / node.next
+    // Property access: arr.length, str.length, or node.val / node.next
     if (ts.isPropertyAccessExpression(expr)) {
       const obj = this.evalExpression(expr.expression, frame);
       const prop = expr.name.text;
-      if (obj && prop === 'length') return obj.length;
+      if (obj != null) {
+        if (prop === 'length') return obj.length;
+        if (prop === 'size') return typeof obj.size === 'function' ? obj.size() : (typeof obj.size === 'number' ? obj.size : (Array.isArray(obj) ? obj.length : undefined));
+        if (prop === 'len') return typeof obj.len === 'function' ? obj.len() : (Array.isArray(obj) ? obj.length : undefined);
+      }
       if (obj === null || obj === undefined) {
         this.activeDiagnostics.push({
           type: 'error',
@@ -916,14 +1000,33 @@ export class AstInterpreter {
   private tryBuildComparisonExpression(expr: ts.Expression, frame: InterpreterFrame, isTrue: boolean): any {
     try {
       if (ts.isBinaryExpression(expr)) {
+        const op = expr.operatorToken.kind;
         const opText = expr.operatorToken.getText(this.sourceFile);
         const lhsVal = this.evalExpression(expr.left, frame);
-        const rhsVal = this.evalExpression(expr.right, frame);
+        let rhsVal: any = undefined;
+        let evaluatedRhs = false;
+
+        if (op === ts.SyntaxKind.AmpersandAmpersandToken) {
+          if (lhsVal) {
+            rhsVal = this.evalExpression(expr.right, frame);
+            evaluatedRhs = true;
+          }
+        } else if (op === ts.SyntaxKind.BarBarToken) {
+          if (!lhsVal) {
+            rhsVal = this.evalExpression(expr.right, frame);
+            evaluatedRhs = true;
+          }
+        } else {
+          rhsVal = this.evalExpression(expr.right, frame);
+          evaluatedRhs = true;
+        }
+
         const lhsStr = expr.left.getText(this.sourceFile);
         const rhsStr = expr.right.getText(this.sourceFile);
+        const rhsDisplay = evaluatedRhs ? ` ${opText} ${rhsStr} (${this.formatVal(rhsVal)})` : ` ${opText} (short-circuited)`;
 
         return {
-          expression: `${lhsStr} (${this.formatVal(lhsVal)}) ${opText} ${rhsStr} (${this.formatVal(rhsVal)})`,
+          expression: `${lhsStr} (${this.formatVal(lhsVal)})${rhsDisplay}`,
           result: isTrue ? `TRUE (${opText} satisfied)` : `FALSE (${opText} not met)`,
           isSatisfied: isTrue
         };
@@ -1110,6 +1213,14 @@ export class AstInterpreter {
       this.userFunctions.set(node.name.text, node);
     } else if (ts.isClassDeclaration(node) && node.name) {
       this.userClasses.set(node.name.text, node);
+      for (const member of node.members) {
+        if (ts.isMethodDeclaration(member) && member.name && ts.isIdentifier(member.name)) {
+          this.userFunctions.set(member.name.text, member as any);
+          if (node.name) {
+            this.userFunctions.set(`${node.name.text}.${member.name.text}`, member as any);
+          }
+        }
+      }
     }
     ts.forEachChild(node, n => this.scanDeclarations(n));
   }
@@ -1430,12 +1541,25 @@ export class AstInterpreter {
     const indentStack = [0];
     const out: string[] = [];
     const declaredVars = new Set<string>();
+    const declaredFunctions: { name: string; paramCount: number }[] = [];
 
     for (let i = 0; i < lines.length; i++) {
       const raw = lines[i];
       const trimmed = raw.trim();
       if (!trimmed || trimmed.startsWith('#')) {
         out.push(raw);
+        continue;
+      }
+
+      // Ignore imports
+      if (trimmed.startsWith('from ') || trimmed.startsWith('import ')) {
+        out.push('// ' + raw);
+        continue;
+      }
+
+      // Unwrap class Solution:
+      if (trimmed.startsWith('class ') && trimmed.endsWith(':')) {
+        out.push('// ' + raw);
         continue;
       }
 
@@ -1474,13 +1598,29 @@ export class AstInterpreter {
       } else if (line.match(/^for\s+([a-zA-Z0-9_$]+)\s+in\s+range\((.*)\):$/)) {
         const forMatch = line.match(/^for\s+([a-zA-Z0-9_$]+)\s+in\s+range\((.*)\):$/)!;
         const v = forMatch[1];
-        const r = forMatch[2];
+        const r = forMatch[2].trim();
         declaredVars.add(v);
-        out.push(' '.repeat(indent) + `for (let ${v} = 0; ${v} < ${r}; ${v}++) {`);
+        if (r.includes(',')) {
+          const parts = r.split(',').map(p => p.trim());
+          out.push(' '.repeat(indent) + `for (let ${v} = ${parts[0]}; ${v} < ${parts[1]}; ${v}++) {`);
+        } else {
+          out.push(' '.repeat(indent) + `for (let ${v} = 0; ${v} < ${r}; ${v}++) {`);
+        }
         indentStack.push(indent + 4);
-      } else if (line.match(/^def\s+([a-zA-Z0-9_$]+)\((.*)\):$/)) {
-        const defMatch = line.match(/^def\s+([a-zA-Z0-9_$]+)\((.*)\):$/)!;
-        out.push(' '.repeat(indent) + `function ${defMatch[1]}(${defMatch[2]}) {`);
+      } else if (line.match(/^def\s+([a-zA-Z0-9_$]+)\((.*)\)(\s*->.*)?:$/)) {
+        const defMatch = line.match(/^def\s+([a-zA-Z0-9_$]+)\((.*)\)(\s*->.*)?:$/)!;
+        const fnName = defMatch[1];
+        const rawParams = defMatch[2];
+        const cleanParams = rawParams.split(',').map(p => {
+          let param = p.trim();
+          if (param === 'self') return '';
+          // strip type annotation: name: Type
+          const colonIdx = param.indexOf(':');
+          if (colonIdx !== -1) param = param.substring(0, colonIdx).trim();
+          return param;
+        }).filter(Boolean);
+        declaredFunctions.push({ name: fnName, paramCount: cleanParams.length });
+        out.push(' '.repeat(indent) + `function ${fnName}(${cleanParams.join(', ')}) {`);
         indentStack.push(indent + 4);
       } else {
         // Ternary assignment: v = a if cond else b
@@ -1529,6 +1669,16 @@ export class AstInterpreter {
       out.push(' '.repeat(indentStack[indentStack.length - 1]) + '}');
     }
 
+    // Auto-invoke entry point if not called
+    if (declaredFunctions.length > 0) {
+      const primaryFn = declaredFunctions[0];
+      const hasCall = lines.some(l => l.includes(`${primaryFn.name}(`) && !l.trim().startsWith('def '));
+      if (!hasCall) {
+        const dummyArgs = new Array(primaryFn.paramCount).fill(0).map((_, idx) => (idx === 0 ? '[-1, 0, 1, 2, -1, -4]' : '0'));
+        out.push(`\n${primaryFn.name}(${dummyArgs.join(', ')});`);
+      }
+    }
+
     return out.join('\n');
   }
 
@@ -1537,6 +1687,7 @@ export class AstInterpreter {
     const lines = rs.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
     const out: string[] = [];
     let inFunction = false;
+    let implBlockDepth = 0;
     const declaredFunctions: { name: string; paramCount: number }[] = [];
 
     for (let i = 0; i < lines.length; i++) {
@@ -1549,12 +1700,37 @@ export class AstInterpreter {
         continue;
       }
 
+      // Ignore use statements and struct declarations
+      if (trimmed.startsWith('use ') || trimmed.startsWith('pub use ')) {
+        out.push('// ' + line);
+        continue;
+      }
+      if (trimmed.startsWith('struct ') || trimmed.startsWith('pub struct ')) {
+        out.push('// ' + line);
+        continue;
+      }
+
+      // Unwrap impl Solution { ... }
+      if (trimmed.startsWith('impl ') || trimmed.startsWith('pub impl ')) {
+        if (trimmed.endsWith('{')) {
+          implBlockDepth++;
+        }
+        out.push('// ' + line);
+        continue;
+      }
+
+      if (implBlockDepth > 0 && trimmed === '}') {
+        implBlockDepth--;
+        out.push('// }');
+        continue;
+      }
+
       // Track unpolled lazy futures (Rust Pull Model lesson)
       if (line.includes('let') && line.includes('fetch_data_async') && !line.includes('.await')) {
         this.unpolledFutures.push('fut');
       }
 
-      // Tuple destructuring: let (mut a, mut b) = (x, y);
+      // Tuple destructuring: let (mut a, mut b) = (x, y); or let (a, b) = (x, y);
       const tupleMatch = line.match(/^(\s*)let\s+\((?:mut\s+)?([a-zA-Z0-9_$]+),\s*(?:mut\s+)?([a-zA-Z0-9_$]+)\)\s*=\s*\((.+)\);?\s*$/);
       if (tupleMatch) {
         const indent = tupleMatch[1];
@@ -1588,6 +1764,7 @@ export class AstInterpreter {
 
         const cleanParams = rawParams.split(',').map(p => {
           let clean = p.trim();
+          if (clean === 'self' || clean === '&self' || clean === '&mut self' || clean === 'mut self') return '';
           clean = clean.replace(/&mut\s+/g, '').replace(/&/g, '').replace(/mut\s+/g, '');
           const colonIdx = clean.indexOf(':');
           if (colonIdx !== -1) clean = clean.substring(0, colonIdx).trim();

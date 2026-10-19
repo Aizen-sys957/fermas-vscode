@@ -13,6 +13,7 @@ import { FIXTURES, type FixtureName } from '../fixtures';
 import type {
   CurriculumModule,
   HostMessage,
+  ImportedCurriculumSource,
   Lens,
   MemorySnapshot,
   PlaybackRate,
@@ -31,6 +32,8 @@ export interface AppState {
   playing: boolean;
   rate: PlaybackRate;
   modules: CurriculumModule[];
+  sources: ImportedCurriculumSource[];
+  activeSourceId: string;
   activeModule?: CurriculumModule;
   answerIndex?: number;
   error?: string;
@@ -51,7 +54,12 @@ type Action =
       error?: string;
     }
   | { type: 'goto'; tick: number }
-  | { type: 'curriculum'; modules: CurriculumModule[] }
+  | {
+      type: 'curriculum';
+      modules: CurriculumModule[];
+      sources?: ImportedCurriculumSource[];
+      activeSourceId?: string;
+    }
   | { type: 'error'; message: string }
   | { type: 'lens'; lens: Lens }
   | { type: 'viewMode'; viewMode: ViewMode }
@@ -76,6 +84,8 @@ const initialState: AppState = {
   playing: false,
   rate: 1,
   modules: [],
+  sources: [],
+  activeSourceId: 'builtin',
   liveSync: persisted?.liveSync ?? true,
 };
 
@@ -105,7 +115,12 @@ function reducer(state: AppState, action: Action): AppState {
     case 'goto':
       return { ...state, tick: clamp(action.tick, state.snapshots.length) };
     case 'curriculum':
-      return { ...state, modules: action.modules };
+      return {
+        ...state,
+        modules: action.modules,
+        sources: action.sources ?? state.sources,
+        activeSourceId: action.activeSourceId ?? state.activeSourceId,
+      };
     case 'error':
       return { ...state, error: action.message, playing: false };
     case 'lens':
@@ -152,6 +167,11 @@ interface StoreValue {
   revealLine: (line: number) => void;
   toggleLiveSync: (enabled?: boolean) => void;
   importGitHub: (repoUrl: string, branch?: string, path?: string) => void;
+  importGitRepo: (repoUrl: string, branch?: string, path?: string) => void;
+  selectCurriculumSource: (sourceId: string) => void;
+  deleteCurriculumSource: (sourceId: string) => void;
+  refreshCurriculum: () => void;
+  exportTemplate: () => void;
   jumpToAnomaly: () => void;
   setSelectedCallNodeId: (id?: string) => void;
   setSelectedHeapNodeId: (id?: string) => void;
@@ -212,6 +232,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const importGitHub = useCallback((repoUrl: string, branch?: string, path?: string) => {
     post({ type: 'IMPORT_GITHUB', repoUrl, branch, path });
+  }, []);
+
+  const importGitRepo = useCallback((repoUrl: string, branch?: string, path?: string) => {
+    post({ type: 'IMPORT_GIT_REPO', repoUrl, branch, path });
+  }, []);
+
+  const selectCurriculumSource = useCallback((sourceId: string) => {
+    post({ type: 'SELECT_CURRICULUM_SOURCE', sourceId });
+  }, []);
+
+  const deleteCurriculumSource = useCallback((sourceId: string) => {
+    post({ type: 'DELETE_CURRICULUM_SOURCE', sourceId });
+  }, []);
+
+  const refreshCurriculum = useCallback(() => {
+    post({ type: 'REFRESH_CURRICULUM' });
+  }, []);
+
+  const exportTemplate = useCallback(() => {
+    post({ type: 'EXPORT_TEMPLATE' });
   }, []);
 
   const setSelectedCallNodeId = useCallback((id?: string) => {
@@ -280,7 +320,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case 'SET_CURRICULUM':
         case 'OPEN_CURRICULUM':
-          dispatch({ type: 'curriculum', modules: message.modules });
+          dispatch({
+            type: 'curriculum',
+            modules: message.modules,
+            sources: message.sources,
+            activeSourceId: message.activeSourceId,
+          });
           break;
         case 'SET_LIVE_SYNC':
           dispatch({ type: 'liveSync', enabled: message.enabled });
@@ -338,6 +383,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       revealLine,
       toggleLiveSync,
       importGitHub,
+      importGitRepo,
+      selectCurriculumSource,
+      deleteCurriculumSource,
+      refreshCurriculum,
+      exportTemplate,
       jumpToAnomaly,
       setSelectedCallNodeId,
       setSelectedHeapNodeId,
@@ -361,6 +411,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       revealLine,
       toggleLiveSync,
       importGitHub,
+      importGitRepo,
+      selectCurriculumSource,
+      deleteCurriculumSource,
+      refreshCurriculum,
+      exportTemplate,
       jumpToAnomaly,
       setSelectedCallNodeId,
       setSelectedHeapNodeId,
