@@ -13,10 +13,9 @@ export function RecursionTreeView() {
     last,
     togglePlay,
     revealLine,
-    setSelectedCallNodeId,
   } = useStore();
-  const selectedCallNodeId = state.selectedCallNodeId;
 
+  const [selectedCallNodeId, setSelectedCallNodeId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(100);
   const [layoutMode, setLayoutMode] = useState<'tree' | 'force'>('tree');
   const [activePathOnly, setActivePathOnly] = useState(false);
@@ -98,61 +97,63 @@ export function RecursionTreeView() {
   const selectedNode = callTree.find((n) => n.id === selectedCallNodeId) || callTree.find((n) => n.id === activeCallId);
 
   return (
-    <div className="flex flex-col gap-3 p-3 text-[#f1f5f9] select-none">
+    <div className="flex flex-col gap-3 p-3 text-[var(--vscode-foreground,#cccccc)] select-none">
       {/* TOP TELEMETRY RIBBON */}
-      <section className="rounded-xl border border-[#2a364f] bg-[#161c27] p-3 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+      <section className="rounded-lg border border-[var(--vscode-panel-border,#333333)] bg-[var(--vscode-sideBar-background,#181818)] p-2.5 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded bg-[#1a2234] px-2.5 py-1 text-xs border border-[#2a364f]">
-            <span className="text-[#00f2fe]">🌳</span>
-            <span className="font-semibold text-[#f1f5f9]">{currentFrame?.functionName || 'main'}()</span>
-            <span className="text-[#94a3b8]">›</span>
-            <span className="text-[#00f2fe] font-mono">
+          <div className="flex items-center gap-1.5 rounded bg-[var(--vscode-editor-background,#1e1e1e)] px-2.5 py-1 text-xs border border-[var(--vscode-panel-border,#333333)]">
+            <span className="text-[#38bdf8]">🌳</span>
+            <span className="font-semibold text-[var(--vscode-foreground,#ffffff)]">{currentFrame?.functionName || 'main'}()</span>
+            <span className="text-[var(--vscode-descriptionForeground,#8c8c8c)]">›</span>
+            <span className="text-[var(--vscode-textLink-foreground,#3794ff)] font-mono">
               Depth: {currentFrame ? snapshot.callStack.length - 1 : 0}{' '}
-              <span className="text-[#94a3b8]">(Max: {maxDepth})</span>
+              <span className="text-[var(--vscode-descriptionForeground,#8c8c8c)]">(Max: {maxDepth})</span>
             </span>
           </div>
 
-          <div className="flex items-center gap-1 rounded bg-[#0d131e] px-2 py-1 text-xs font-mono border border-[#2a364f]">
-            <span className="text-[#94a3b8] uppercase text-[10px]">Invocations:</span>
-            <span className="text-[#10b981] font-bold">{callTree.length} nodes</span>
+          <div className="flex items-center gap-1 rounded bg-[var(--vscode-editor-background,#1e1e1e)] px-2 py-1 text-xs font-mono border border-[var(--vscode-panel-border,#333333)]">
+            <span className="text-[var(--vscode-descriptionForeground,#8c8c8c)] uppercase text-[10px]">Invocations:</span>
+            <span className="text-[#34d399] font-medium">{callTree.length} nodes</span>
           </div>
         </div>
 
         {/* Canvas Controls */}
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-between md:justify-end">
           {/* Zoom Buttons */}
-          <div className="flex items-center rounded bg-[#0d131e] p-0.5 border border-[#2a364f]">
+          <div className="flex items-center rounded bg-[var(--vscode-editor-background,#1e1e1e)] p-0.5 border border-[var(--vscode-panel-border,#333333)]">
             <button
               type="button"
               onClick={() => setZoom((z) => Math.max(50, z - 15))}
-              className="h-6 w-6 rounded flex items-center justify-center text-xs text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#1a2234]"
+              className="h-6 w-6 rounded flex items-center justify-center text-xs text-[var(--vscode-descriptionForeground,#8c8c8c)] hover:text-[var(--vscode-foreground,#ffffff)] hover:bg-[var(--vscode-toolbar-hoverBackground,#2a2d2e)]"
             >
               -
             </button>
-            <span className="px-2 font-mono text-[11px] text-[#00f2fe]">{zoom}%</span>
+            <span className="px-2 font-mono text-[11px] text-[var(--vscode-foreground,#cccccc)]">{zoom}%</span>
             <button
               type="button"
               onClick={() => setZoom((z) => Math.min(180, z + 15))}
-              className="h-6 w-6 rounded flex items-center justify-center text-xs text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#1a2234]"
+              className="h-6 w-6 rounded flex items-center justify-center text-xs text-[var(--vscode-descriptionForeground,#8c8c8c)] hover:text-[var(--vscode-foreground,#ffffff)] hover:bg-[var(--vscode-toolbar-hoverBackground,#2a2d2e)]"
             >
               +
             </button>
             <button
               type="button"
               onClick={() => setZoom(100)}
-              className="px-2 h-6 text-[10px] text-[#94a3b8] hover:text-[#f1f5f9] hover:bg-[#1a2234] rounded"
+              className="px-2 h-6 text-[10px] text-[var(--vscode-descriptionForeground,#8c8c8c)] hover:text-[var(--vscode-foreground,#ffffff)] hover:bg-[var(--vscode-toolbar-hoverBackground,#2a2d2e)] rounded"
             >
               Center
             </button>
           </div>
 
           {/* Layout Toggle */}
-          <div className="flex items-center rounded bg-[#0d131e] p-0.5 border border-[#2a364f] text-xs">
+          <div className="flex items-center rounded bg-[var(--vscode-editor-background,#1e1e1e)] p-0.5 border border-[var(--vscode-panel-border,#333333)] text-xs">
             <button
               type="button"
               onClick={() => setLayoutMode('tree')}
-              className={`px-2 py-0.5 rounded ${
-                layoutMode === 'tree' ? 'bg-[#1a2234] text-[#00f2fe] font-medium' : 'text-[#94a3b8]'
+              className={`px-2 py-0.5 rounded transition-colors ${
+                layoutMode === 'tree'
+                  ? 'bg-[var(--vscode-button-background,#0e639c)] text-[var(--vscode-button-foreground,#ffffff)] font-medium'
+                  : 'text-[var(--vscode-descriptionForeground,#8c8c8c)] hover:text-[var(--vscode-foreground,#ffffff)]'
               }`}
             >
               Tree
@@ -160,8 +161,10 @@ export function RecursionTreeView() {
             <button
               type="button"
               onClick={() => setLayoutMode('force')}
-              className={`px-2 py-0.5 rounded ${
-                layoutMode === 'force' ? 'bg-[#1a2234] text-[#00f2fe] font-medium' : 'text-[#94a3b8]'
+              className={`px-2 py-0.5 rounded transition-colors ${
+                layoutMode === 'force'
+                  ? 'bg-[var(--vscode-button-background,#0e639c)] text-[var(--vscode-button-foreground,#ffffff)] font-medium'
+                  : 'text-[var(--vscode-descriptionForeground,#8c8c8c)] hover:text-[var(--vscode-foreground,#ffffff)]'
               }`}
             >
               Force
@@ -174,8 +177,8 @@ export function RecursionTreeView() {
             onClick={() => setActivePathOnly(!activePathOnly)}
             className={`rounded px-2.5 py-1 text-xs border transition-colors ${
               activePathOnly
-                ? 'bg-[#00f2fe]/15 text-[#00f2fe] border-[#00f2fe]/40'
-                : 'bg-[#1a2234] text-[#94a3b8] border-[#2a364f]'
+                ? 'bg-[var(--vscode-button-background,#0e639c)] text-[var(--vscode-button-foreground,#ffffff)] border-[var(--vscode-focusBorder,#007fd4)]'
+                : 'bg-[var(--vscode-button-secondaryBackground,#3a3d41)] text-[var(--vscode-button-secondaryForeground,#cccccc)] border-[var(--vscode-panel-border,#333333)] hover:bg-[var(--vscode-button-secondaryHoverBackground,#45494e)]'
             }`}
           >
             Active Path Only
@@ -187,8 +190,8 @@ export function RecursionTreeView() {
             onClick={() => setShowMemoCache(!showMemoCache)}
             className={`rounded px-2.5 py-1 text-xs border transition-colors ${
               showMemoCache
-                ? 'bg-[#8b5cf6]/15 text-[#8b5cf6] border-[#8b5cf6]/40'
-                : 'bg-[#1a2234] text-[#94a3b8] border-[#2a364f]'
+                ? 'bg-[var(--vscode-button-background,#0e639c)] text-[var(--vscode-button-foreground,#ffffff)] border-[var(--vscode-focusBorder,#007fd4)]'
+                : 'bg-[var(--vscode-button-secondaryBackground,#3a3d41)] text-[var(--vscode-button-secondaryForeground,#cccccc)] border-[var(--vscode-panel-border,#333333)] hover:bg-[var(--vscode-button-secondaryHoverBackground,#45494e)]'
             }`}
           >
             Memo Cache
@@ -197,14 +200,14 @@ export function RecursionTreeView() {
       </section>
 
       {/* STEPPER BAR */}
-      <section className="rounded-xl border border-[#2a364f] bg-[#0d131e] p-2.5 shadow-inner flex flex-wrap items-center justify-between gap-3">
+      <section className="rounded-lg border border-[var(--vscode-panel-border,#333333)] bg-[var(--vscode-sideBar-background,#181818)] p-2 shadow-sm flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={first}
               disabled={state.tick === 0}
-              className="h-6 w-6 rounded bg-[#161c27] border border-[#2a364f] text-[10px] text-[#94a3b8] hover:text-[#00f2fe] disabled:opacity-30"
+              className="h-6 w-6 rounded bg-[var(--vscode-button-secondaryBackground,#3a3d41)] border border-[var(--vscode-panel-border,#333333)] text-[10px] text-[var(--vscode-button-secondaryForeground,#cccccc)] hover:bg-[var(--vscode-button-secondaryHoverBackground,#45494e)] disabled:opacity-30"
             >
               ⏮
             </button>
@@ -212,14 +215,14 @@ export function RecursionTreeView() {
               type="button"
               onClick={() => step(-1)}
               disabled={state.tick === 0}
-              className="h-6 px-2 rounded bg-[#161c27] border border-[#2a364f] text-[10px] text-[#94a3b8] hover:text-[#00f2fe] disabled:opacity-30"
+              className="h-6 px-2 rounded bg-[var(--vscode-button-secondaryBackground,#3a3d41)] border border-[var(--vscode-panel-border,#333333)] text-[10px] text-[var(--vscode-button-secondaryForeground,#cccccc)] hover:bg-[var(--vscode-button-secondaryHoverBackground,#45494e)] disabled:opacity-30"
             >
               ◀
             </button>
             <button
               type="button"
               onClick={togglePlay}
-              className="h-6 px-3 rounded bg-[#00f2fe] text-[#080e19] font-bold text-xs hover:bg-[#6ff6ff]"
+              className="h-6 px-3 rounded bg-[var(--vscode-button-background,#0e639c)] text-[var(--vscode-button-foreground,#ffffff)] font-medium text-xs hover:bg-[var(--vscode-button-hoverBackground,#1177bb)]"
             >
               {state.playing ? '⏸' : '▶'}
             </button>
@@ -227,7 +230,7 @@ export function RecursionTreeView() {
               type="button"
               onClick={() => step(1)}
               disabled={state.tick >= total - 1}
-              className="h-6 px-2 rounded bg-[#161c27] border border-[#2a364f] text-[10px] text-[#00f2fe] disabled:opacity-30"
+              className="h-6 px-2 rounded bg-[var(--vscode-button-secondaryBackground,#3a3d41)] border border-[var(--vscode-panel-border,#333333)] text-[10px] text-[var(--vscode-button-secondaryForeground,#cccccc)] hover:bg-[var(--vscode-button-secondaryHoverBackground,#45494e)] disabled:opacity-30"
             >
               ▶
             </button>
@@ -235,48 +238,49 @@ export function RecursionTreeView() {
               type="button"
               onClick={last}
               disabled={state.tick >= total - 1}
-              className="h-6 w-6 rounded bg-[#161c27] border border-[#2a364f] text-[10px] text-[#94a3b8] hover:text-[#00f2fe] disabled:opacity-30"
+              className="h-6 w-6 rounded bg-[var(--vscode-button-secondaryBackground,#3a3d41)] border border-[var(--vscode-panel-border,#333333)] text-[10px] text-[var(--vscode-button-secondaryForeground,#cccccc)] hover:bg-[var(--vscode-button-secondaryHoverBackground,#45494e)] disabled:opacity-30"
             >
               ⏭
             </button>
           </div>
 
-          <span className="font-mono text-xs text-[#00f2fe]">
-            Step {state.tick + 1} <span className="text-[#94a3b8]">/ {total}</span>
+          <span className="font-mono text-xs text-[var(--vscode-foreground,#cccccc)]">
+            Step <span className="font-semibold text-[var(--vscode-textLink-foreground,#3794ff)]">{state.tick + 1}</span>{' '}
+            <span className="text-[var(--vscode-descriptionForeground,#8c8c8c)]">/ {total}</span>
           </span>
         </div>
 
         {/* Active Line Chip */}
         <div
           onClick={() => revealLine(snapshot.line)}
-          className="flex items-center gap-2 rounded bg-[#161c27] px-2.5 py-1 text-xs border border-[#2a364f] cursor-pointer hover:border-[#00f2fe]"
+          className="flex items-center gap-2 rounded bg-[var(--vscode-editor-background,#1e1e1e)] px-2.5 py-1 text-xs border border-[var(--vscode-panel-border,#333333)] cursor-pointer hover:border-[var(--vscode-focusBorder,#007fd4)] transition-colors"
         >
-          <span className="h-2 w-2 rounded-full bg-[#00f2fe] animate-pulse" />
-          <span className="text-[#94a3b8] text-[11px]">Active Line:</span>
-          <code className="font-mono text-[#00f2fe] truncate max-w-xs">{snapshot.codeSnippet || 'return;'}</code>
-          <span className="font-mono text-[10px] text-[#94a3b8]">:{snapshot.line}</span>
+          <span className="h-1.5 w-1.5 rounded-full bg-[var(--vscode-textLink-foreground,#3794ff)]" />
+          <span className="text-[var(--vscode-descriptionForeground,#8c8c8c)] text-[11px]">Active Line:</span>
+          <code className="font-mono text-[var(--vscode-textLink-foreground,#3794ff)] truncate max-w-xs">{snapshot.codeSnippet || 'return;'}</code>
+          <span className="font-mono text-[10px] text-[var(--vscode-descriptionForeground,#8c8c8c)]">:{snapshot.line}</span>
         </div>
       </section>
 
       {/* 2D CALL TREE TOPOLOGY CANVAS */}
-      <section className="relative w-full h-[540px] rounded-xl border border-[#2a364f] bg-[#080e19] overflow-hidden shadow-2xl flex flex-col">
+      <section className="relative w-full h-[540px] rounded-lg border border-[var(--vscode-panel-border,#333333)] bg-[var(--vscode-editor-background,#1e1e1e)] overflow-hidden shadow-sm flex flex-col">
         {/* Canvas Header */}
-        <div className="flex items-center justify-between px-3 py-2 bg-[#161c27]/80 backdrop-blur-md border-b border-[#242a36] z-10">
+        <div className="flex items-center justify-between px-3 py-2 bg-[var(--vscode-sideBar-background,#181818)] border-b border-[var(--vscode-panel-border,#333333)] z-10">
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#94a3b8]">Dynamic Call Tree</span>
-            <div className="flex items-center gap-2 text-[10px]">
-              <span className="inline-flex items-center gap-1 text-[#10b981]">
-                <span className="h-2 w-2 rounded-full bg-[#10b981]" /> Resolved
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--vscode-descriptionForeground,#8c8c8c)]">Dynamic Call Tree</span>
+            <div className="flex items-center gap-2.5 text-[10px]">
+              <span className="inline-flex items-center gap-1 text-[#34d399]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#34d399]" /> Resolved
               </span>
-              <span className="inline-flex items-center gap-1 text-[#00f2fe]">
-                <span className="h-2 w-2 rounded-full bg-[#00f2fe] animate-pulse" /> Active
+              <span className="inline-flex items-center gap-1 text-[var(--vscode-textLink-foreground,#3794ff)]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--vscode-textLink-foreground,#3794ff)]" /> Active
               </span>
-              <span className="inline-flex items-center gap-1 text-[#f59e0b]">
-                <span className="h-2 w-2 rounded-full bg-[#f59e0b]" /> Pruned
+              <span className="inline-flex items-center gap-1 text-[#fbbf24]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#fbbf24]" /> Pruned
               </span>
             </div>
           </div>
-          <span className="font-mono text-[11px] text-[#94a3b8]">Pan/Scroll enabled</span>
+          <span className="font-mono text-[11px] text-[var(--vscode-descriptionForeground,#8c8c8c)]">Pan/Scroll enabled</span>
         </div>
 
         {/* Interactive SVG Canvas */}
@@ -287,22 +291,17 @@ export function RecursionTreeView() {
           >
             {/* SVG Connecting Edges */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ minWidth: '900px', minHeight: '480px' }}>
-              <defs>
-                <linearGradient id="treeEdgeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stop-color="#00f2fe" stop-opacity="0.7" />
-                  <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.4" />
-                </linearGradient>
-              </defs>
               {treeLayout.map(({ node, x, y, parentX, parentY }) => {
                 if (parentX === undefined || parentY === undefined) return null;
                 const cY = (parentY + y) / 2;
+                const isActiveEdge = node.id === activeCallId;
                 return (
                   <path
                     key={`edge-${node.id}`}
                     d={`M ${parentX} ${parentY + 20} C ${parentX} ${cY}, ${x} ${cY}, ${x} ${y - 20}`}
                     fill="none"
-                    stroke={node.id === activeCallId ? '#00f2fe' : '#2a364f'}
-                    strokeWidth={node.id === activeCallId ? 2.5 : 1.5}
+                    stroke={isActiveEdge ? 'var(--vscode-focusBorder,#007fd4)' : 'var(--vscode-panel-border,#333333)'}
+                    strokeWidth={isActiveEdge ? 2 : 1}
                     strokeDasharray={node.status === 'active' ? '4 2' : undefined}
                   />
                 );
@@ -323,27 +322,27 @@ export function RecursionTreeView() {
                     if (node.startTick) goto(node.startTick - 1);
                   }}
                   style={{ left: `${x - 70}px`, top: `${y - 22}px` }}
-                  className={`absolute w-36 rounded-lg p-2 text-center transition-all cursor-pointer shadow-lg border ${
+                  className={`absolute w-36 rounded-md p-2 text-center transition-all cursor-pointer border ${
                     isActive
-                      ? 'bg-[#1a2234] border-[#00f2fe] text-[#00f2fe] ring-2 ring-[#00f2fe]/30 scale-105'
+                      ? 'bg-[var(--vscode-list-activeSelectionBackground,#094771)] border-[var(--vscode-focusBorder,#007fd4)] text-[var(--vscode-foreground,#ffffff)] ring-1 ring-[var(--vscode-focusBorder,#007fd4)]'
                       : isSelected
-                      ? 'bg-[#242a36] border-[#8b5cf6] text-[#f1f5f9]'
+                      ? 'bg-[var(--vscode-editorWidget-background,#252526)] border-[var(--vscode-focusBorder,#007fd4)] text-[var(--vscode-foreground,#ffffff)]'
                       : isResolved
-                      ? 'bg-[#161c27] border-[#10b981]/40 text-[#f1f5f9]'
-                      : 'bg-[#161c27] border-[#2a364f] text-[#94a3b8]'
+                      ? 'bg-[var(--vscode-sideBar-background,#181818)] border-[var(--vscode-panel-border,#333333)] text-[var(--vscode-foreground,#cccccc)] hover:border-[var(--vscode-focusBorder,#007fd4)]'
+                      : 'bg-[var(--vscode-sideBar-background,#181818)] border-[var(--vscode-panel-border,#333333)] text-[var(--vscode-descriptionForeground,#8c8c8c)] hover:border-[var(--vscode-focusBorder,#007fd4)]'
                   }`}
                 >
-                  <div className="flex items-center justify-between text-[9px] font-mono text-[#94a3b8] mb-0.5">
+                  <div className="flex items-center justify-between text-[9px] font-mono text-[var(--vscode-descriptionForeground,#8c8c8c)] mb-0.5">
                     <span>d:{node.depth}</span>
-                    <span className={isResolved ? 'text-[#10b981]' : isActive ? 'text-[#00f2fe]' : 'text-[#f59e0b]'}>
+                    <span className={isResolved ? 'text-[#34d399]' : isActive ? 'text-[var(--vscode-textLink-foreground,#3794ff)]' : 'text-[#fbbf24]'}>
                       {isResolved ? '✓' : isActive ? '▶' : '⟲'}
                     </span>
                   </div>
 
-                  <div className="font-mono text-xs font-bold truncate">{node.functionName}()</div>
+                  <div className="font-mono text-xs font-semibold truncate">{node.functionName}()</div>
 
                   {/* Arguments preview */}
-                  <div className="font-mono text-[9px] text-[#94a3b8] truncate mt-0.5">
+                  <div className="font-mono text-[9px] text-[var(--vscode-descriptionForeground,#8c8c8c)] truncate mt-0.5">
                     {Object.values(node.args).map((val) =>
                       typeof val === 'object' ? JSON.stringify(val) : String(val)
                     ).join(', ')}
@@ -351,7 +350,7 @@ export function RecursionTreeView() {
 
                   {/* Return value chip if resolved */}
                   {node.returnValue !== undefined && (
-                    <div className="mt-1 rounded bg-[#080e19] px-1 py-0.5 font-mono text-[9px] text-[#10b981] truncate">
+                    <div className="mt-1 rounded bg-[var(--vscode-editor-background,#1e1e1e)] px-1 py-0.5 font-mono text-[9px] text-[#34d399] truncate border border-[var(--vscode-panel-border,#333333)]">
                       → {typeof node.returnValue === 'object' ? JSON.stringify(node.returnValue) : String(node.returnValue)}
                     </div>
                   )}
@@ -363,14 +362,14 @@ export function RecursionTreeView() {
 
         {/* Selected Node Details Bar */}
         {selectedNode && (
-          <div className="p-2.5 bg-[#161c27] border-t border-[#242a36] flex flex-wrap items-center justify-between text-xs">
+          <div className="p-2.5 bg-[var(--vscode-sideBar-background,#181818)] border-t border-[var(--vscode-panel-border,#333333)] flex flex-wrap items-center justify-between text-xs">
             <div className="flex items-center gap-3">
-              <span className="font-mono font-bold text-[#00f2fe]">{selectedNode.functionName}()</span>
-              <span className="text-[#94a3b8]">
-                Arguments: <code className="font-mono text-[#f1f5f9]">{JSON.stringify(selectedNode.args)}</code>
+              <span className="font-mono font-semibold text-[var(--vscode-textLink-foreground,#3794ff)]">{selectedNode.functionName}()</span>
+              <span className="text-[var(--vscode-descriptionForeground,#8c8c8c)]">
+                Arguments: <code className="font-mono text-[var(--vscode-foreground,#ffffff)]">{JSON.stringify(selectedNode.args)}</code>
               </span>
               {selectedNode.returnValue !== undefined && (
-                <span className="text-[#10b981]">
+                <span className="text-[#34d399]">
                   Return: <code className="font-mono">{JSON.stringify(selectedNode.returnValue)}</code>
                 </span>
               )}
@@ -378,7 +377,7 @@ export function RecursionTreeView() {
             <button
               type="button"
               onClick={() => goto(selectedNode.startTick - 1)}
-              className="text-[11px] text-[#00f2fe] hover:underline"
+              className="text-[11px] text-[var(--vscode-textLink-foreground,#3794ff)] hover:underline"
             >
               Jump to Tick #{selectedNode.startTick} ↗
             </button>

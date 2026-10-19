@@ -73,9 +73,9 @@ export function Segmented<T extends string>({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            'px-2 py-1 text-[11px]',
+            'px-2 py-1 text-[11px] transition-colors',
             value === option.value
-              ? 'bg-accent font-semibold text-black'
+              ? 'bg-[var(--vscode-button-background,#0e639c)] font-medium text-[var(--vscode-button-foreground,#ffffff)]'
               : 'bg-surface text-muted hover:text-fg',
           )}
         >

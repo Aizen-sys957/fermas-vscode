@@ -6,40 +6,48 @@
  * themes and user colour customisations all propagate automatically.
  */
 @theme inline {
-  --color-bg: var(--vscode-editor-background, #0d131e);
-  --color-surface: var(--vscode-sideBar-background, #161c27);
-  --color-raised: var(--vscode-editorWidget-background, #1a202b);
-  --color-border: var(--vscode-panel-border, #2a364f);
-  --color-fg: var(--vscode-foreground, #f1f5f9);
-  --color-muted: var(--vscode-descriptionForeground, #94a3b8);
-  --color-accent: var(--vscode-focusBorder, #00f2fe);
-  --color-ok: var(--vscode-testing-iconPassed, #10b981);
-  --color-warn: var(--vscode-editorWarning-foreground, #f59e0b);
-  --color-err: var(--vscode-errorForeground, #f43f5e);
+  --color-bg: var(--vscode-editor-background, #1e1e1e);
+  --color-surface: var(--vscode-sideBar-background, #252526);
+  --color-raised: var(--vscode-editorWidget-background, #2d2d2d);
+  --color-subtle: var(--vscode-input-background, #1e1e1e);
+  --color-border: var(--vscode-panel-border, var(--vscode-widget-border, #333333));
+  --color-border-subtle: var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
+  --color-fg: var(--vscode-foreground, #cccccc);
+  --color-fg-bright: var(--vscode-editor-foreground, #ffffff);
+  --color-muted: var(--vscode-descriptionForeground, #8c8c8c);
+  --color-accent: var(--vscode-focusBorder, #007acc);
+  --color-link: var(--vscode-textLink-foreground, #3794ff);
 
-  /* Stitch Theme Surfaces */
-  --color-surface-lowest: #080e19;
-  --color-surface-low: #161c27;
-  --color-surface-container: #1a202b;
-  --color-surface-high: #242a36;
-  --color-surface-highest: #2f3541;
+  /* Subtle Semantic Indicators */
+  --color-ok: var(--vscode-gitDecoration-addedResourceForeground, #89d185);
+  --color-warn: var(--vscode-editorWarning-foreground, #cca700);
+  --color-err: var(--vscode-errorForeground, #f14c4c);
+  --color-info: var(--vscode-editorInfo-foreground, #3794ff);
 
-  /* Stitch Semantic Telemetry Accents */
-  --color-cyan: #00f2fe;
-  --color-violet: #8b5cf6;
-  --color-emerald: #10b981;
-  --color-amber: #f59e0b;
-  --color-coral: #f43f5e;
-  --color-indigo: #6366f1;
+  /* Standard surfaces */
+  --color-surface-lowest: var(--vscode-editor-background, #1e1e1e);
+  --color-surface-low: var(--vscode-sideBar-background, #252526);
+  --color-surface-container: var(--vscode-editorWidget-background, #2d2d2d);
+  --color-surface-high: var(--vscode-list-hoverBackground, #2a2d2e);
+  --color-surface-highest: var(--vscode-list-activeSelectionBackground, #094771);
 
-  --font-sans: var(--vscode-font-family, Inter, -apple-system, sans-serif);
-  --font-mono: var(--vscode-editor-font-family, 'JetBrains Mono', Consolas, monospace);
+  /* Subtle Semantic Pastel Accents */
+  --color-cyan: #38bdf8;
+  --color-violet: #a78bfa;
+  --color-emerald: #34d399;
+  --color-amber: #fbbf24;
+  --color-coral: #f87171;
+  --color-indigo: #818cf8;
+
+  --font-sans: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  --font-mono: var(--vscode-editor-font-family, Consolas, 'Courier New', monospace);
 
   /* Language accents */
   --color-lang-js: #fbbf24;
   --color-lang-py: #38bdf8;
   --color-lang-rs: #fb7185;
 }
+
 
 
 @layer base {

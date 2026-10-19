@@ -255,17 +255,17 @@ export function AlgorithmHubView() {
   };
 
   return (
-    <div className="flex flex-col gap-3 p-3 text-[#f1f5f9] select-none">
+    <div className="flex flex-col gap-3 p-3 text-[var(--vscode-foreground,#cccccc)] select-none">
       {/* TOP HEADER & SEARCH RIBBON */}
-      <section className="rounded-xl border border-[#2a364f] bg-[#161c27] p-3 shadow-md flex flex-col gap-2.5">
+      <section className="rounded-lg border border-[var(--vscode-panel-border,#333333)] bg-[var(--vscode-sideBar-background,#181818)] p-3 shadow-sm flex flex-col gap-2.5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
-            <div className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-[#00f2fe]">
+            <div className="flex items-center gap-1.5 text-[10px] uppercase font-semibold text-[var(--vscode-textLink-foreground,#3794ff)]">
               <span>Curriculum &amp; Remote Ingestion</span>
-              <span className="text-[#94a3b8]">•</span>
-              <span className="font-mono text-[#94a3b8]">AST Instrumenter v2.4</span>
+              <span className="text-[var(--vscode-descriptionForeground,#8c8c8c)]">•</span>
+              <span className="font-mono text-[var(--vscode-descriptionForeground,#8c8c8c)]">AST Instrumenter v2.4</span>
             </div>
-            <h2 className="text-base font-bold text-[#f1f5f9] tracking-tight">
+            <h2 className="text-base font-bold text-[var(--vscode-foreground,#ffffff)] tracking-tight">
               Fermas Algorithm Curriculum &amp; Dynamic Code Sandbox
             </h2>
           </div>
@@ -277,10 +277,10 @@ export function AlgorithmHubView() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Filter by algorithm, data structure, or tag..."
-              className="w-full rounded-lg bg-[#0d131e] border border-[#2a364f] pl-8 pr-12 py-1.5 text-xs text-[#f1f5f9] placeholder:text-[#94a3b8] outline-none focus:border-[#00f2fe] transition-colors"
+              className="w-full rounded bg-[var(--vscode-input-background,#1e1e1e)] border border-[var(--vscode-input-border,#3c3c3c)] pl-8 pr-12 py-1.5 text-xs text-[var(--vscode-input-foreground,#cccccc)] placeholder:text-[var(--vscode-input-placeholderForeground,#8c8c8c)] outline-none focus:border-[var(--vscode-focusBorder,#007fd4)] transition-colors"
             />
-            <span className="absolute left-2.5 top-2 text-xs text-[#94a3b8]">🔍</span>
-            <span className="absolute right-2 top-1.5 font-mono text-[9px] bg-[#1a2234] text-[#94a3b8] px-1.5 py-0.5 rounded border border-[#2a364f]">
+            <span className="absolute left-2.5 top-2 text-xs text-[var(--vscode-descriptionForeground,#8c8c8c)]">🔍</span>
+            <span className="absolute right-2 top-1.5 font-mono text-[9px] bg-[var(--vscode-badge-background,#4d4d4d)] text-[var(--vscode-badge-foreground,#ffffff)] px-1.5 py-0.5 rounded border border-[var(--vscode-panel-border,#333333)]">
               ⌘K
             </span>
           </div>
@@ -299,14 +299,14 @@ export function AlgorithmHubView() {
                 key={cat}
                 type="button"
                 onClick={() => setSelectedCategory(cat)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs transition-colors shrink-0 ${
+                className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs transition-colors shrink-0 ${
                   isSelected
-                    ? 'bg-[#00f2fe] text-[#080e19] font-bold shadow-[0_0_8px_rgba(0,242,254,0.3)]'
-                    : 'bg-[#1a2234] text-[#94a3b8] hover:bg-[#242a36] hover:text-[#f1f5f9]'
+                    ? 'bg-[var(--vscode-button-background,#0e639c)] text-[var(--vscode-button-foreground,#ffffff)] font-medium'
+                    : 'bg-[var(--vscode-button-secondaryBackground,#3a3d41)] text-[var(--vscode-button-secondaryForeground,#cccccc)] hover:bg-[var(--vscode-button-secondaryHoverBackground,#45494e)] hover:text-[var(--vscode-foreground,#ffffff)]'
                 }`}
               >
                 <span>{cat}</span>
-                <span className={`text-[10px] px-1 rounded-full ${isSelected ? 'bg-[#080e19]/20' : 'bg-[#0d131e]'}`}>
+                <span className={`text-[10px] px-1 rounded ${isSelected ? 'bg-[var(--vscode-button-hoverBackground,#1177bb)]' : 'bg-[var(--vscode-editor-background,#1e1e1e)]'}`}>
                   {count}
                 </span>
               </button>
@@ -315,25 +315,25 @@ export function AlgorithmHubView() {
         </div>
 
         {/* REMOTE GITHUB INGESTION ACTION BAR */}
-        <div className="rounded-lg bg-[#0d131e] p-2.5 border border-[#242a36] flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5 shadow-inner">
+        <div className="rounded bg-[var(--vscode-editor-background,#1e1e1e)] p-2.5 border border-[var(--vscode-panel-border,#333333)] flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-2.5 shadow-sm">
           <div className="flex items-center gap-2">
-            <span className="text-[#00f2fe] text-lg">⚡</span>
+            <span className="text-[var(--vscode-textLink-foreground,#3794ff)] text-lg">⚡</span>
             <div className="flex flex-col">
-              <span className="text-xs font-bold text-[#f1f5f9]">Remote Trace Importer</span>
-              <span className="text-[10px] text-[#94a3b8]">Transpile &amp; inject live bytecode instrumenter hooks</span>
+              <span className="text-xs font-semibold text-[var(--vscode-foreground,#ffffff)]">Remote Trace Importer</span>
+              <span className="text-[10px] text-[var(--vscode-descriptionForeground,#8c8c8c)]">Transpile &amp; inject live bytecode instrumenter hooks</span>
             </div>
           </div>
 
           <div className="flex-1 flex flex-wrap lg:flex-nowrap items-center gap-2">
             {/* Repo Input */}
             <div className="relative flex-1 min-w-[200px]">
-              <span className="absolute left-2 top-2 text-[11px] text-[#94a3b8]">📂</span>
+              <span className="absolute left-2 top-2 text-[11px] text-[var(--vscode-descriptionForeground,#8c8c8c)]">📂</span>
               <input
                 type="text"
                 value={repoUrl}
                 onChange={(e) => setRepoUrl(e.target.value)}
                 placeholder="github.com/owner/repo/path"
-                className="w-full rounded bg-[#161c27] border border-[#2a364f] pl-6 pr-2 py-1 text-xs font-mono text-[#00f2fe] placeholder:text-[#94a3b8] outline-none"
+                className="w-full rounded bg-[var(--vscode-input-background,#1e1e1e)] border border-[var(--vscode-input-border,#3c3c3c)] pl-6 pr-2 py-1 text-xs font-mono text-[var(--vscode-input-foreground,#cccccc)] placeholder:text-[var(--vscode-input-placeholderForeground,#8c8c8c)] outline-none focus:border-[var(--vscode-focusBorder,#007fd4)]"
               />
             </div>
 
@@ -342,7 +342,7 @@ export function AlgorithmHubView() {
               aria-label="GitHub Branch"
               value={branch}
               onChange={(e) => setBranch(e.target.value)}
-              className="rounded bg-[#161c27] border border-[#2a364f] px-2 py-1 text-xs font-mono text-[#f1f5f9] outline-none cursor-pointer"
+              className="rounded bg-[var(--vscode-dropdown-background,#252526)] border border-[var(--vscode-dropdown-border,#3c3c3c)] px-2 py-1 text-xs font-mono text-[var(--vscode-dropdown-foreground,#cccccc)] outline-none cursor-pointer focus:border-[var(--vscode-focusBorder,#007fd4)]"
             >
               <option value="main">main</option>
               <option value="master">master</option>
@@ -355,7 +355,7 @@ export function AlgorithmHubView() {
               value={filePath}
               onChange={(e) => setFilePath(e.target.value)}
               placeholder="solution.ts"
-              className="w-24 rounded bg-[#161c27] border border-[#2a364f] px-2 py-1 text-xs font-mono text-[#f1f5f9] outline-none"
+              className="w-24 rounded bg-[var(--vscode-input-background,#1e1e1e)] border border-[var(--vscode-input-border,#3c3c3c)] px-2 py-1 text-xs font-mono text-[var(--vscode-input-foreground,#cccccc)] outline-none focus:border-[var(--vscode-focusBorder,#007fd4)]"
             />
 
             {/* Import Button */}
@@ -363,7 +363,7 @@ export function AlgorithmHubView() {
               type="button"
               disabled={isImporting}
               onClick={handleImportGitHub}
-              className="flex items-center justify-center gap-1.5 px-3 py-1 rounded bg-[#00f2fe] text-[#080e19] font-bold text-xs hover:bg-[#6ff6ff] transition-all disabled:opacity-50 shrink-0"
+              className="flex items-center justify-center gap-1.5 px-3 py-1 rounded bg-[var(--vscode-button-background,#0e639c)] text-[var(--vscode-button-foreground,#ffffff)] font-medium text-xs hover:bg-[var(--vscode-button-hoverBackground,#1177bb)] transition-colors disabled:opacity-50 shrink-0"
             >
               <span>{isImporting ? '⏳' : '⚡'}</span>
               <span>{isImporting ? 'Ingesting...' : 'Import & Instrument AST'}</span>
@@ -375,10 +375,10 @@ export function AlgorithmHubView() {
       {/* ALGORITHM CARDS GRID */}
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between text-xs">
-          <span className="font-semibold text-[#f1f5f9]">
+          <span className="font-semibold text-[var(--vscode-foreground,#ffffff)]">
             Preset Algorithm Index ({filteredAlgorithms.length} Available)
           </span>
-          <span className="text-[#94a3b8] font-mono text-[10px]">READY-TO-TRACE</span>
+          <span className="text-[var(--vscode-descriptionForeground,#8c8c8c)] font-mono text-[10px]">READY-TO-TRACE</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -387,41 +387,41 @@ export function AlgorithmHubView() {
             return (
               <div
                 key={algo.id}
-                className={`rounded-xl border p-3.5 flex flex-col justify-between transition-all shadow-md group ${
+                className={`rounded-lg border p-3.5 flex flex-col justify-between transition-colors shadow-sm group ${
                   isActive
-                    ? 'bg-[#1a2234] border-[#00f2fe] shadow-[0_0_12px_rgba(0,242,254,0.15)]'
-                    : 'bg-[#161c27] border-[#2a364f] hover:border-[#00f2fe]/50 hover:bg-[#1a2234]'
+                    ? 'bg-[var(--vscode-sideBar-background,#181818)] border-[var(--vscode-focusBorder,#007fd4)] ring-1 ring-[var(--vscode-focusBorder,#007fd4)]'
+                    : 'bg-[var(--vscode-sideBar-background,#181818)] border-[var(--vscode-panel-border,#333333)] hover:border-[var(--vscode-focusBorder,#007fd4)]'
                 }`}
               >
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-mono text-[10px] text-[#00f2fe] uppercase font-bold">
+                    <span className="font-mono text-[10px] text-[var(--vscode-textLink-foreground,#3794ff)] uppercase font-semibold">
                       {algo.category}
                     </span>
                     <span
-                      className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded ${
+                      className={`text-[9px] font-mono font-medium px-1.5 py-0.5 rounded ${
                         algo.difficulty === 'EASY'
-                          ? 'bg-[#10b981]/15 text-[#10b981]'
+                          ? 'bg-[#34d399]/15 text-[#34d399]'
                           : algo.difficulty === 'MEDIUM'
                           ? 'bg-[#fbbf24]/15 text-[#fbbf24]'
-                          : 'bg-[#f43f5e]/15 text-[#f43f5e]'
+                          : 'bg-[#f87171]/15 text-[#f87171]'
                       }`}
                     >
                       {algo.difficulty}
                     </span>
                   </div>
 
-                  <h3 className="text-sm font-bold text-[#f1f5f9] mb-1 group-hover:text-[#00f2fe] transition-colors">
+                  <h3 className="text-sm font-semibold text-[var(--vscode-foreground,#ffffff)] mb-1 group-hover:text-[var(--vscode-textLink-foreground,#3794ff)] transition-colors">
                     {algo.title}
                   </h3>
 
-                  <p className="text-xs text-[#94a3b8] leading-snug line-clamp-2 mb-3">
+                  <p className="text-xs text-[var(--vscode-descriptionForeground,#8c8c8c)] leading-snug line-clamp-2 mb-3">
                     {algo.description}
                   </p>
                 </div>
 
-                <div className="pt-2 border-t border-[#242a36] flex flex-col gap-2">
-                  <div className="flex items-center justify-between text-[11px] font-mono text-[#94a3b8]">
+                <div className="pt-2 border-t border-[var(--vscode-panel-border,#333333)] flex flex-col gap-2">
+                  <div className="flex items-center justify-between text-[11px] font-mono text-[var(--vscode-descriptionForeground,#8c8c8c)]">
                     <span>⏱ {algo.timeComplexity}</span>
                     <span>🧠 {algo.spaceComplexity}</span>
                   </div>
@@ -431,7 +431,7 @@ export function AlgorithmHubView() {
                       {algo.languages.map((l) => (
                         <span
                           key={l}
-                          className="font-mono text-[9px] px-1 py-0.5 rounded bg-[#0d131e] text-[#94a3b8] border border-[#2a364f]"
+                          className="font-mono text-[9px] px-1 py-0.5 rounded bg-[var(--vscode-editor-background,#1e1e1e)] text-[var(--vscode-descriptionForeground,#8c8c8c)] border border-[var(--vscode-panel-border,#333333)]"
                         >
                           {l}
                         </span>
@@ -441,7 +441,7 @@ export function AlgorithmHubView() {
                     <button
                       type="button"
                       onClick={() => loadModule(algo.id)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#00f2fe]/15 text-[#00f2fe] border border-[#00f2fe]/30 font-bold text-xs hover:bg-[#00f2fe] hover:text-[#080e19] transition-all"
+                      className="flex items-center gap-1 px-2.5 py-1 rounded bg-[var(--vscode-button-secondaryBackground,#3a3d41)] text-[var(--vscode-button-secondaryForeground,#cccccc)] hover:bg-[var(--vscode-button-background,#0e639c)] hover:text-[var(--vscode-button-foreground,#ffffff)] border border-[var(--vscode-panel-border,#333333)] font-medium text-xs transition-colors"
                     >
                       <span>▶</span>
                       <span>Trace ({algo.ticks} Ticks)</span>

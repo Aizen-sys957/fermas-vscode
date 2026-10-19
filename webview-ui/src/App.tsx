@@ -18,7 +18,7 @@ export function App() {
       : state.viewMode;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[#0d131e] text-[#f1f5f9]">
+    <div className="flex h-full flex-col overflow-hidden bg-[var(--vscode-editor-background,#1e1e1e)] text-[var(--vscode-foreground,#cccccc)]">
       <Header />
 
       {state.error && (

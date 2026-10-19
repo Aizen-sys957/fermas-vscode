@@ -11,7 +11,7 @@ import {
   TimelinePoint,
 } from './types';
 
-const POINTER_COLORS = ['#00f2fe', '#8b5cf6', '#10b981', '#f59e0b', '#f43f5e', '#6366f1', '#38bdf8', '#fbbf24'];
+const POINTER_COLORS = ['#38bdf8', '#a78bfa', '#34d399', '#fbbf24', '#f87171', '#818cf8', '#2dd4bf', '#fb923c'];
 const BLOCKED_GLOBALS = new Set([
   'process', 'require', 'global', 'globalThis', 'window', 'document',
   'eval', 'Function', 'module', 'exports', 'importScripts', 'child_process', 'fs'
