@@ -1,0 +1,408 @@
+{
+  "language": "javascript",
+  "fileName": "three-sum.js",
+  "snapshots": [
+    {
+      "tick": 1,
+      "totalTicks": 10,
+      "line": 1,
+      "codeSnippet": "let nums = [-4, -1, 0, 1, 2];",
+      "event": "init",
+      "explanation": "Program initialised. Scope and heap are both empty.",
+      "callStack": [{ "frameId": "frame-main", "functionName": "main", "line": 1, "scope": {} }],
+      "heap": {},
+      "concurrency": { "microtasks": [], "macrotasks": [], "pendingTasks": [] },
+      "stdout": []
+    },
+    {
+      "tick": 2,
+      "totalTicks": 10,
+      "line": 1,
+      "codeSnippet": "let nums = [-4, -1, 0, 1, 2];",
+      "event": "step",
+      "explanation": "nums is a compound value, so it is allocated on the heap as @heap:1. The variable holds a reference to it, not a copy.",
+      "callStack": [
+        {
+          "frameId": "frame-main",
+          "functionName": "main",
+          "line": 1,
+          "scope": {
+            "nums": {
+              "name": "nums",
+              "type": "reference",
+              "value": "@heap:1",
+              "rawType": "array",
+              "isChanged": true
+            }
+          }
+        }
+      ],
+      "heap": {
+        "@heap:1": {
+          "id": "@heap:1",
+          "type": "array",
+          "elements": [-4, -1, 0, 1, 2],
+          "inferredPointers": [],
+          "activeIndices": []
+        }
+      },
+      "concurrency": { "microtasks": [], "macrotasks": [], "pendingTasks": [] },
+      "stdout": [],
+      "inlayHint": "[nums → @heap:1]"
+    },
+    {
+      "tick": 3,
+      "totalTicks": 10,
+      "line": 2,
+      "codeSnippet": "let target = 0;",
+      "event": "step",
+      "explanation": "target = 0. It holds a value inside the array's index range, but it is never used as an index, so it is NOT shown as a pointer.",
+      "callStack": [
+        {
+          "frameId": "frame-main",
+          "functionName": "main",
+          "line": 2,
+          "scope": {
+            "nums": {
+              "name": "nums",
+              "type": "reference",
+              "value": "@heap:1",
+              "rawType": "array",
+              "isChanged": false
+            },
+            "target": {
+              "name": "target",
+              "type": "primitive",
+              "value": 0,
+              "rawType": "number",
+              "isChanged": true
+            }
+          }
+        }
+      ],
+      "heap": {
+        "@heap:1": {
+          "id": "@heap:1",
+          "type": "array",
+          "elements": [-4, -1, 0, 1, 2],
+          "inferredPointers": [],
+          "activeIndices": []
+        }
+      },
+      "concurrency": { "microtasks": [], "macrotasks": [], "pendingTasks": [] },
+      "stdout": [],
+      "inlayHint": "[target = 0]"
+    },
+    {
+      "tick": 4,
+      "totalTicks": 10,
+      "line": 3,
+      "codeSnippet": "let left = 0;",
+      "event": "step",
+      "explanation": "left binds to index 0. From the next tick on it is pinned to a cell of @heap:1.",
+      "callStack": [
+        {
+          "frameId": "frame-main",
+          "functionName": "main",
+          "line": 3,
+          "scope": {
+            "nums": {
+              "name": "nums",
+              "type": "reference",
+              "value": "@heap:1",
+              "rawType": "array",
+              "isChanged": false
+            },
+            "target": {
+              "name": "target",
+              "type": "primitive",
+              "value": 0,
+              "rawType": "number",
+              "isChanged": false
+            },
+            "left": {
+              "name": "left",
+              "type": "primitive",
+              "value": 0,
+              "rawType": "number",
+              "isChanged": true
+            }
+          }
+        }
+      ],
+      "heap": {
+        "@heap:1": {
+          "id": "@heap:1",
+          "type": "array",
+          "elements": [-4, -1, 0, 1, 2],
+          "inferredPointers": [{ "variableName": "left", "index": 0, "color": "#818cf8", "label": "left = 0" }],
+          "activeIndices": []
+        }
+      },
+      "concurrency": { "microtasks": [], "macrotasks": [], "pendingTasks": [] },
+      "stdout": [],
+      "inlayHint": "[left = 0]"
+    },
+    {
+      "tick": 5,
+      "totalTicks": 10,
+      "line": 4,
+      "codeSnippet": "let right = nums.length - 1;",
+      "event": "step",
+      "explanation": "right = 4, the index of the last element. Two pointers now bracket the array.",
+      "callStack": [
+        {
+          "frameId": "frame-main",
+          "functionName": "main",
+          "line": 4,
+          "scope": {
+            "nums": {
+              "name": "nums",
+              "type": "reference",
+              "value": "@heap:1",
+              "rawType": "array",
+              "isChanged": false
+            },
+            "target": {
+              "name": "target",
+              "type": "primitive",
+              "value": 0,
+              "rawType": "number",
+              "isChanged": false
+            },
+            "left": {
+              "name": "left",
+              "type": "primitive",
+              "value": 0,
+              "rawType": "number",
+              "isChanged": false
+            },
+            "right": {
+              "name": "right",
+              "type": "primitive",
+              "value": 4,
+              "rawType": "number",
+              "isChanged": true
+            }
+          }
+        }
+      ],
+      "heap": {
+        "@heap:1": {
+          "id": "@heap:1",
+          "type": "array",
+          "elements": [-4, -1, 0, 1, 2],
+          "inferredPointers": [
+            { "variableName": "left", "index": 0, "color": "#818cf8", "label": "left = 0" },
+            { "variableName": "right", "index": 4, "color": "#34d399", "label": "right = 4" }
+          ],
+          "activeIndices": []
+        }
+      },
+      "concurrency": { "microtasks": [], "macrotasks": [], "pendingTasks": [] },
+      "stdout": [],
+      "inlayHint": "[right = 4]"
+    },
+    {
+      "tick": 6,
+      "totalTicks": 10,
+      "line": 6,
+      "codeSnippet": "while (left < right) {",
+      "event": "loop",
+      "explanation": "Loop condition is true, so the body executes. This is a real back-jump: line 6 is re-evaluated after every iteration.",
+      "callStack": [{ "frameId": "frame-main", "functionName": "main", "line": 6, "scope": {} }],
+      "heap": {
+        "@heap:1": {
+          "id": "@heap:1",
+          "type": "array",
+          "elements": [-4, -1, 0, 1, 2],
+          "inferredPointers": [
+            { "variableName": "left", "index": 0, "color": "#818cf8", "label": "left = 0" },
+            { "variableName": "right", "index": 4, "color": "#34d399", "label": "right = 4" }
+          ],
+          "activeIndices": []
+        }
+      },
+      "concurrency": { "microtasks": [], "macrotasks": [], "pendingTasks": [] },
+      "stdout": [],
+      "evaluatedExpression": {
+        "expression": "left < right",
+        "result": "0 < 4 → true (enter loop)",
+        "isSatisfied": true
+      },
+      "inlayHint": "[condition: TRUE]"
+    },
+    {
+      "tick": 7,
+      "totalTicks": 10,
+      "line": 7,
+      "codeSnippet": "  let sum = nums[left] + nums[right];",
+      "event": "step",
+      "explanation": "Both pointers are dereferenced: nums[0] = -4 and nums[4] = 2. The cells light up as read, and sum = -2.",
+      "callStack": [
+        {
+          "frameId": "frame-main",
+          "functionName": "main",
+          "line": 7,
+          "scope": {
+            "left": {
+              "name": "left",
+              "type": "primitive",
+              "value": 0,
+              "rawType": "number",
+              "isChanged": false
+            },
+            "right": {
+              "name": "right",
+              "type": "primitive",
+              "value": 4,
+              "rawType": "number",
+              "isChanged": false
+            },
+            "sum": {
+              "name": "sum",
+              "type": "primitive",
+              "value": -2,
+              "rawType": "number",
+              "isChanged": true
+            }
+          }
+        }
+      ],
+      "heap": {
+        "@heap:1": {
+          "id": "@heap:1",
+          "type": "array",
+          "elements": [-4, -1, 0, 1, 2],
+          "inferredPointers": [
+            { "variableName": "left", "index": 0, "color": "#818cf8", "label": "left = 0" },
+            { "variableName": "right", "index": 4, "color": "#34d399", "label": "right = 4" }
+          ],
+          "activeIndices": [
+            { "index": 0, "type": "read" },
+            { "index": 4, "type": "read" }
+          ]
+        }
+      },
+      "concurrency": { "microtasks": [], "macrotasks": [], "pendingTasks": [] },
+      "stdout": [],
+      "evaluatedExpression": {
+        "expression": "nums[left] + nums[right]",
+        "result": "nums[0] = -4 + nums[4] = 2 → sum = -2",
+        "isSatisfied": false
+      },
+      "inlayHint": "[sum = -2]"
+    },
+    {
+      "tick": 8,
+      "totalTicks": 10,
+      "line": 8,
+      "codeSnippet": "if (sum === target) {",
+      "event": "step",
+      "explanation": "sum (-2) is not equal to target (0), so this branch is skipped entirely. The interpreter must NOT walk into the body.",
+      "callStack": [{ "frameId": "frame-main", "functionName": "main", "line": 8, "scope": {} }],
+      "heap": {
+        "@heap:1": {
+          "id": "@heap:1",
+          "type": "array",
+          "elements": [-4, -1, 0, 1, 2],
+          "inferredPointers": [
+            { "variableName": "left", "index": 0, "color": "#818cf8", "label": "left = 0" },
+            { "variableName": "right", "index": 4, "color": "#34d399", "label": "right = 4" }
+          ],
+          "activeIndices": []
+        }
+      },
+      "concurrency": { "microtasks": [], "macrotasks": [], "pendingTasks": [] },
+      "stdout": [],
+      "evaluatedExpression": {
+        "expression": "sum === target",
+        "result": "-2 === 0 → false (branch skipped)",
+        "isSatisfied": false
+      },
+      "inlayHint": "[branch skipped]"
+    },
+    {
+      "tick": 9,
+      "totalTicks": 10,
+      "line": 11,
+      "codeSnippet": "  if (sum < 0) {",
+      "event": "step",
+      "explanation": "sum is negative, so the left pointer must advance to raise the total. Exactly one branch of the if/else chain is taken.",
+      "callStack": [{ "frameId": "frame-main", "functionName": "main", "line": 11, "scope": {} }],
+      "heap": {
+        "@heap:1": {
+          "id": "@heap:1",
+          "type": "array",
+          "elements": [-4, -1, 0, 1, 2],
+          "inferredPointers": [
+            { "variableName": "left", "index": 0, "color": "#818cf8", "label": "left = 0" },
+            { "variableName": "right", "index": 4, "color": "#34d399", "label": "right = 4" }
+          ],
+          "activeIndices": []
+        }
+      },
+      "concurrency": { "microtasks": [], "macrotasks": [], "pendingTasks": [] },
+      "stdout": [],
+      "evaluatedExpression": {
+        "expression": "sum < 0",
+        "result": "-2 < 0 → true (branch taken)",
+        "isSatisfied": true
+      },
+      "inlayHint": "[branch taken]"
+    },
+    {
+      "tick": 10,
+      "totalTicks": 10,
+      "line": 12,
+      "codeSnippet": "    left++;",
+      "event": "step",
+      "explanation": "left advances from 0 to 1 and its pointer badge slides one cell to the right.",
+      "callStack": [
+        {
+          "frameId": "frame-main",
+          "functionName": "main",
+          "line": 12,
+          "scope": {
+            "left": {
+              "name": "left",
+              "type": "primitive",
+              "value": 1,
+              "rawType": "number",
+              "isChanged": true
+            },
+            "right": {
+              "name": "right",
+              "type": "primitive",
+              "value": 4,
+              "rawType": "number",
+              "isChanged": false
+            },
+            "sum": {
+              "name": "sum",
+              "type": "primitive",
+              "value": -2,
+              "rawType": "number",
+              "isChanged": false
+            }
+          }
+        }
+      ],
+      "heap": {
+        "@heap:1": {
+          "id": "@heap:1",
+          "type": "array",
+          "elements": [-4, -1, 0, 1, 2],
+          "inferredPointers": [
+            { "variableName": "left", "index": 1, "color": "#818cf8", "label": "left = 1" },
+            { "variableName": "right", "index": 4, "color": "#34d399", "label": "right = 4" }
+          ],
+          "activeIndices": []
+        }
+      },
+      "concurrency": { "microtasks": [], "macrotasks": [], "pendingTasks": [] },
+      "stdout": [],
+      "inlayHint": "[left → 1]"
+    }
+  ]
+}

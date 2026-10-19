@@ -39,30 +39,39 @@ Fermas contrasts the mental models of three major languages:
 ## 🛠 Project Structure
 
 ```
-c:\fermas\
+fermas-vscode\
 ├── package.json               # VS Code extension manifest
 ├── tsconfig.json              # TypeScript compilation config
-├── esbuild.js                 # Blazing-fast extension & webview bundler
+├── esbuild.js                 # Builds the extension host only
 ├── .vscode\
 │   ├── launch.json            # One-click F5 debug launcher
 │   └── tasks.json             # Pre-launch compile task
 ├── src\
 │   ├── extension.ts           # Extension entrypoint, commands, status bar
-│   ├── engine\
-│   │   ├── types.ts           # Universal snapshot & trace schemas
+│   ├── engine\                # BACKEND — see docs/FERMAS-CONTRACT.md
+│   │   ├── types.ts           # Frozen snapshot & trace contract
 │   │   ├── tracer.ts          # Unified engine coordinator
-│   │   ├── jsTracer.ts        # Dynamic JS/TS step execution & memory tracer
-│   │   ├── pythonTracer.ts    # Dynamic Python execution tracer
-│   │   ├── rustTracer.ts      # Dynamic Rust execution & future state tracer
-│   │   └── curriculumServer.ts# Dynamic curriculum sync client & offline fallback
-│   ├── providers\
-│   │   ├── fermasWebviewProvider.ts # Webview view provider & bidirectional bridge
-│   │   ├── fermasCodeLensProvider.ts# Inline [⚡ Visualize] CodeLens
-│   │   ├── fermasInlayHintsProvider.ts # In-editor inline state hints
-│   │   └── fermasDecorations.ts     # Active line highlight & gutter markers
-│   └── webview\
-│       ├── main.ts            # Interactive timeline, scrubber, array ribbon, quiz UI
-│       └── style.css          # Modern dark-mode Tailwind-inspired styling
+│   │   ├── astInterpreter.ts  # AST step interpreter (JS/TS)
+│   │   ├── jsTracer.ts        # JS/TS execution & memory tracer
+│   │   ├── pythonTracer.ts    # Python execution tracer
+│   │   ├── rustTracer.ts      # Rust execution & future state tracer
+│   │   └── curriculumServer.ts# Curriculum sync client & offline fallback
+│   └── providers\             # FRONTEND (host side)
+│       ├── fermasWebviewProvider.ts    # Panel hosting & message bridge
+│       ├── fermasCodeLensProvider.ts   # Inline [⚡ Visualize] CodeLens
+│       ├── fermasInlayHintsProvider.ts # In-editor inline state hints
+│       └── fermasDecorations.ts        # Active line highlight & gutter markers
+├── webview-ui\                # FRONTEND (panel) — React + Vite + Tailwind
+│   ├── vite.config.ts         # Builds -> dist/webview.js + dist/style.css
+│   ├── src\
+│   │   ├── App.tsx            # Panel shell
+│   │   ├── state\store.tsx    # Trace state, playback, host sync
+│   │   ├── components\        # Header, toolbar, scrubber, lenses, ribbon, quiz
+│   │   ├── fixtures\          # Reference traces (work offline, no engine)
+│   │   └── styles\index.css   # Tailwind theme mapped to --vscode-* tokens
+│   └── package.json
+├── docs\
+│   └── FERMAS-CONTRACT.md     # Frontend/backend split, protocol, guarantees
 ├── server\
 │   └── demoServer.js          # Standalone HTTP dynamic curriculum server
 └── examples\
@@ -72,28 +81,50 @@ c:\fermas\
     └── lazy_future.rs         # Rust Lazy Future vs Eager execution
 ```
 
+> The panel and the engine are separate packages on purpose. The panel only
+> consumes `MemorySnapshot[]` from `src/engine/types.ts`; it never parses or
+> evaluates user code. See [docs/FERMAS-CONTRACT.md](docs/FERMAS-CONTRACT.md).
+
 ---
 
 ## 🏃 How to Run and Test Fermas
 
-### Step 1: Start the Dynamic Curriculum Server (Optional, for Live Sync Demo)
+### Step 0: Install dependencies (once)
+```bash
+npm install                 # extension host + build tooling
+npm run install:webview     # panel dependencies (React/Vite/Tailwind)
+```
+
+### Step 1: Build
+```bash
+npm run compile             # extension host (esbuild) + panel (Vite)
+```
+Or run `npm run watch` and `npm run watch:webview` in two terminals while developing.
+
+### Step 2: Start the Dynamic Curriculum Server (Optional, for Live Sync Demo)
 In a terminal, run:
 ```bash
 npm run serve:curriculum
 ```
 This launches the curriculum server on `http://localhost:3456/api/curriculum`.
 
-### Step 2: Launch the Extension in VS Code
-1. Open this workspace (`c:\fermas`) in VS Code.
+### Step 3: Launch the Extension in VS Code
+1. Open this workspace in VS Code.
 2. Press **`F5`** (or go to **Run & Debug** $\to$ **Run Extension (Fermas)**).
 3. A new **Extension Development Host** VS Code window will open with Fermas active!
+4. Click the **Fermas** icon in the secondary side bar (right edge) — or press
+   `Ctrl+Alt+B` to show it. The panel docks beside your code.
 
-### Step 3: Test Interactive Visualizations
+### Step 4: Test Interactive Visualizations
 1. In the new window, open any file in `examples/`:
-   - Open [examples/three_sum.js](file:///c:/fermas/examples/three_sum.js)
+   - Open `examples/three_sum.js`
    - Click the **`[⚡ Run Entire File in Fermas Visualizer]`** CodeLens button above line 1 (or run command `Fermas: Visualize Active Code Execution`).
-2. The **Fermas Visualizer Canvas** opens beside your code:
-   - Scrub through the timeline with `[◀]` and `[▶]` or the timeline slider.
-   - Watch the array ribbon: pointer badges for `i`, `left`, and `right` slide dynamically along the cells.
-   - Watch the editor gutter highlight the active line and display inline inlay hints!
-3. Click **"📚 CS Curriculum"** in the top navigation to load other interactive lessons (Microtask Starvation in JS, Container With Most Water in Python, or Rust Ghost Futures) synced dynamically from the server!
+2. Scrub through the timeline with `[◀]` and `[▶]` or the timeline slider.
+3. Switch between the **Concurrency** and **Memory** lens in the panel header.
+4. Watch the editor gutter highlight the active line and display inline inlay hints.
+
+### Working on the panel without the engine
+Open the panel and, from the empty state, load a bundled reference trace
+(`js-microtasks`, `js-three-sum`). These render the full UI with no engine and no
+network — see [webview-ui/src/fixtures](webview-ui/src/fixtures).
+

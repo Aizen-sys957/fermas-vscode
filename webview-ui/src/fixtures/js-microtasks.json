@@ -1,0 +1,161 @@
+{
+  "language": "javascript",
+  "fileName": "microtasks.js",
+  "snapshots": [
+    {
+      "tick": 1,
+      "totalTicks": 8,
+      "line": 1,
+      "codeSnippet": "console.log(\"1. Synchronous Start\");",
+      "event": "init",
+      "explanation": "Program initialised. The call stack is empty and no queues hold anything yet.",
+      "callStack": [{ "frameId": "frame-main", "functionName": "main", "line": 1, "scope": {} }],
+      "heap": {},
+      "concurrency": { "microtasks": [], "macrotasks": [], "pendingTasks": [] },
+      "stdout": []
+    },
+    {
+      "tick": 2,
+      "totalTicks": 8,
+      "line": 1,
+      "codeSnippet": "console.log(\"1. Synchronous Start\");",
+      "event": "step",
+      "explanation": "Synchronous output runs immediately on the call stack.",
+      "callStack": [{ "frameId": "frame-main", "functionName": "main", "line": 1, "scope": {} }],
+      "heap": {},
+      "concurrency": { "microtasks": [], "macrotasks": [], "pendingTasks": [] },
+      "stdout": ["1. Synchronous Start"],
+      "inlayHint": "[stdout: 1. Synchronous Start]"
+    },
+    {
+      "tick": 3,
+      "totalTicks": 8,
+      "line": 3,
+      "codeSnippet": "setTimeout(() => {",
+      "event": "async_tick",
+      "explanation": "setTimeout(..., 0) is enqueued as a MACROTASK. A 0ms delay does not mean \"now\" — it cannot run while the call stack is busy.",
+      "callStack": [{ "frameId": "frame-main", "functionName": "main", "line": 3, "scope": {} }],
+      "heap": {},
+      "concurrency": {
+        "microtasks": [],
+        "macrotasks": ["setTimeout → console.log(\"4. Macrotask\") 0ms"],
+        "pendingTasks": []
+      },
+      "stdout": ["1. Synchronous Start"],
+      "inlayHint": "[Macrotask enqueued]"
+    },
+    {
+      "tick": 4,
+      "totalTicks": 8,
+      "line": 7,
+      "codeSnippet": "Promise.resolve().then(() => {",
+      "event": "async_tick",
+      "explanation": "The promise is already fulfilled, so its .then callback is queued as a MICROTASK immediately. Only Microtask #1 is queued here — #2 registers when #1 returns.",
+      "callStack": [{ "frameId": "frame-main", "functionName": "main", "line": 7, "scope": {} }],
+      "heap": {},
+      "concurrency": {
+        "microtasks": ["then → console.log(\"2. Microtask #1\")"],
+        "macrotasks": ["setTimeout → console.log(\"4. Macrotask\") 0ms"],
+        "pendingTasks": []
+      },
+      "stdout": ["1. Synchronous Start"],
+      "inlayHint": "[Microtask enqueued — high priority]"
+    },
+    {
+      "tick": 5,
+      "totalTicks": 8,
+      "line": 13,
+      "codeSnippet": "console.log(\"1. Synchronous End\");",
+      "event": "step",
+      "explanation": "All synchronous code has now finished. The call stack is empty, so the event loop drains the microtask queue BEFORE checking any timer.",
+      "callStack": [{ "frameId": "frame-main", "functionName": "main", "line": 13, "scope": {} }],
+      "heap": {},
+      "concurrency": {
+        "microtasks": ["then → console.log(\"2. Microtask #1\")"],
+        "macrotasks": ["setTimeout → console.log(\"4. Macrotask\") 0ms"],
+        "pendingTasks": []
+      },
+      "stdout": ["1. Synchronous Start", "1. Synchronous End"],
+      "inlayHint": "[stdout: 1. Synchronous End]"
+    },
+    {
+      "tick": 6,
+      "totalTicks": 8,
+      "line": 8,
+      "codeSnippet": "  console.log(\"2. Microtask #1 (Promise)\");",
+      "event": "async_tick",
+      "explanation": "Microtask #1 runs. Returning from it resolves the chained promise, which queues Microtask #2 behind the current one.",
+      "callStack": [
+        {
+          "frameId": "frame-micro-1",
+          "functionName": "(microtask) → then",
+          "line": 8,
+          "scope": {}
+        }
+      ],
+      "heap": {},
+      "concurrency": {
+        "microtasks": ["then → console.log(\"3. Microtask #2\")"],
+        "macrotasks": ["setTimeout → console.log(\"4. Macrotask\") 0ms"],
+        "pendingTasks": []
+      },
+      "stdout": ["1. Synchronous Start", "1. Synchronous End", "2. Microtask #1 (Promise)"],
+      "inlayHint": "[Microtask executing]"
+    },
+    {
+      "tick": 7,
+      "totalTicks": 8,
+      "line": 10,
+      "codeSnippet": "  console.log(\"3. Microtask #2 (Chained Promise)\");",
+      "event": "async_tick",
+      "explanation": "The microtask queue is drained to emptiness. Microtask #2 runs before any timer, even though the timer was scheduled first.",
+      "callStack": [
+        {
+          "frameId": "frame-micro-2",
+          "functionName": "(microtask) → then",
+          "line": 10,
+          "scope": {}
+        }
+      ],
+      "heap": {},
+      "concurrency": {
+        "microtasks": [],
+        "macrotasks": ["setTimeout → console.log(\"4. Macrotask\") 0ms"],
+        "pendingTasks": []
+      },
+      "stdout": [
+        "1. Synchronous Start",
+        "1. Synchronous End",
+        "2. Microtask #1 (Promise)",
+        "3. Microtask #2 (Chained Promise)"
+      ],
+      "inlayHint": "[Microtask executing]"
+    },
+    {
+      "tick": 8,
+      "totalTicks": 8,
+      "line": 4,
+      "codeSnippet": "  console.log(\"4. Macrotask (setTimeout 0ms)\");",
+      "event": "async_tick",
+      "explanation": "Only now, with the microtask queue empty, does the event loop pick up the macrotask. This delay is microtask starvation.",
+      "callStack": [
+        {
+          "frameId": "frame-macro-1",
+          "functionName": "(timer) → setTimeout",
+          "line": 4,
+          "scope": {}
+        }
+      ],
+      "heap": {},
+      "concurrency": { "microtasks": [], "macrotasks": [], "pendingTasks": [] },
+      "stdout": [
+        "1. Synchronous Start",
+        "1. Synchronous End",
+        "2. Microtask #1 (Promise)",
+        "3. Microtask #2 (Chained Promise)",
+        "4. Macrotask (setTimeout 0ms)"
+      ],
+      "inlayHint": "[Macrotask executing]"
+    }
+  ]
+}

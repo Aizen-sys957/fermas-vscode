@@ -1,11 +1,11 @@
 {
   "name": "fermas",
-  "displayName": "Fermas — Omniscient Code Execution & CS Concept Visualizer",
-  "description": "Interactive dynamic code execution, memory graph, and concurrency visualizer for CS education.",
+  "displayName": "Fermas — Code Execution Visualizer",
+  "description": "Step through any program and watch the call stack, heap and event-loop queues, right beside your code.",
   "version": "0.1.0",
   "publisher": "fermas",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.88.0"
   },
   "categories": [
     "Education",
@@ -25,13 +25,21 @@
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onStartupFinished"
+    "onView:fermas.visualizerView",
+    "onView:fermas.visualizerViewSecondary"
   ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
         {
           "id": "fermas-explorer",
+          "title": "Fermas",
+          "icon": "media/icon.svg"
+        }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "fermas-secondary",
           "title": "Fermas",
           "icon": "media/icon.svg"
         }
@@ -42,7 +50,14 @@
         {
           "type": "webview",
           "id": "fermas.visualizerView",
-          "name": "Fermas Visualizer"
+          "name": "Visualizer"
+        }
+      ],
+      "fermas-secondary": [
+        {
+          "type": "webview",
+          "id": "fermas.visualizerViewSecondary",
+          "name": "Visualizer"
         }
       ]
     },
@@ -51,6 +66,11 @@
         "command": "fermas.visualize",
         "title": "Fermas: Visualize Active Code Execution",
         "icon": "$(play)"
+      },
+      {
+        "command": "fermas.openPanel",
+        "title": "Fermas: Open Visualizer in Editor Tab",
+        "icon": "$(open-preview)"
       },
       {
         "command": "fermas.openCurriculum",
@@ -83,22 +103,31 @@
       ],
       "view/title": [
         {
-          "command": "fermas.openCurriculum",
-          "when": "view == fermas.visualizerView",
+          "command": "fermas.openPanel",
+          "when": "view == fermas.visualizerView || view == fermas.visualizerViewSecondary",
           "group": "navigation@1"
         },
         {
-          "command": "fermas.visualize",
-          "when": "view == fermas.visualizerView",
+          "command": "fermas.openCurriculum",
+          "when": "view == fermas.visualizerView || view == fermas.visualizerViewSecondary",
           "group": "navigation@2"
+        },
+        {
+          "command": "fermas.visualize",
+          "when": "view == fermas.visualizerView || view == fermas.visualizerViewSecondary",
+          "group": "navigation@3"
         }
       ]
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm.cmd run compile",
-    "compile": "node esbuild.js",
+    "vscode:prepublish": "npm run compile",
+    "compile": "node esbuild.js && npm run compile:webview",
+    "compile:webview": "npm --prefix webview-ui run build",
     "watch": "node esbuild.js --watch",
+    "watch:webview": "npm --prefix webview-ui run watch",
+    "install:webview": "npm --prefix webview-ui install",
+    "typecheck:webview": "npm --prefix webview-ui run typecheck",
     "serve:curriculum": "node server/demoServer.js",
     "package": "npx @vscode/vsce package --no-dependencies"
   },

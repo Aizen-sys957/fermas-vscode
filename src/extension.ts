@@ -12,9 +12,11 @@ export function activate(context: vscode.ExtensionContext) {
   const webviewProvider = new FermasWebviewProvider(context.extensionUri, decorations, inlayHintsProvider);
   const codeLensProvider = new FermasCodeLensProvider();
 
-  // Register Webview View
+  // Register the panel in both containers: activity bar and, the one that
+  // matters most, the secondary sidebar so it sits beside the code.
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(FermasWebviewProvider.viewType, webviewProvider)
+    vscode.window.registerWebviewViewProvider(FermasWebviewProvider.viewType, webviewProvider),
+    vscode.window.registerWebviewViewProvider(FermasWebviewProvider.secondaryViewType, webviewProvider)
   );
 
   // Register CodeLens & InlayHints for JS/TS, Python, Rust
@@ -42,6 +44,9 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('fermas.visualize', () => {
       webviewProvider.runTraceOnActiveEditor();
+    }),
+    vscode.commands.registerCommand('fermas.openPanel', () => {
+      webviewProvider.openInBesidePanel();
     }),
     vscode.commands.registerCommand('fermas.openCurriculum', () => {
       webviewProvider.openCurriculumBrowser();
