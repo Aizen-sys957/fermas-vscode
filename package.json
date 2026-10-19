@@ -4,6 +4,10 @@
   "description": "Step through any program and watch the call stack, heap and event-loop queues, right beside your code.",
   "version": "0.1.0",
   "publisher": "fermas",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Aizen-sys957/fermas-vscode.git"
+  },
   "engines": {
     "vscode": "^1.88.0"
   },

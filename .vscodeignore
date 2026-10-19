@@ -1,0 +1,21 @@
+# Sources — the extension runs from the bundled output in dist/
+src/**
+webview-ui/**
+server/**
+examples/**
+docs/**
+
+# Build tooling and repo metadata
+.vscode/**
+.gitignore
+.gitattributes
+tsconfig.json
+esbuild.js
+package-lock.json
+node_modules/**
+
+# Sourcemaps are for debugging the repo, not for shipping
+dist/*.map
+
+# Never ship a packaged extension inside itself
+*.vsix

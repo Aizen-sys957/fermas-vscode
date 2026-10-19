@@ -1,49 +1,40 @@
-import { Console } from './components/Console';
-import { ConcurrencyLens } from './components/ConcurrencyLens';
-import { Curriculum } from './components/Curriculum';
-import { EmptyState } from './components/EmptyState';
 import { Header } from './components/Header';
-import { MemoryLens } from './components/MemoryLens';
-import { PredictFirst } from './components/PredictFirst';
-import { Scrubber } from './components/Scrubber';
-import { StepBanner } from './components/StepBanner';
-import { Toolbar } from './components/Toolbar';
+import { DynamicVisualizerView } from './components/DynamicVisualizerView';
+import { RecursionTreeView } from './components/RecursionTreeView';
+import { TimelineMemoryDiffView } from './components/TimelineMemoryDiffView';
+import { AlgorithmHubView } from './components/AlgorithmHubView';
+import { Console } from './components/Console';
 import { Notice } from './components/ui';
 import { useStore } from './state/store';
 
 export function App() {
-  const { state, snapshot } = useStore();
+  const { state } = useStore();
+
+  const currentView =
+    state.viewMode === 'editor'
+      ? 'visualizer'
+      : state.viewMode === 'lessons'
+      ? 'algo-hub'
+      : state.viewMode;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-bg">
+    <div className="flex h-full flex-col overflow-hidden bg-[#0d131e] text-[#f1f5f9]">
       <Header />
 
-      {state.viewMode === 'lessons' ? (
-        <main className="fermas-scroll flex-1">
-          <Curriculum />
-        </main>
-      ) : !snapshot ? (
-        <main className="fermas-scroll flex-1">
-          {state.error && <Notice tone="err">{state.error}</Notice>}
-          <EmptyState />
-        </main>
-      ) : (
-        <>
-          <Toolbar />
-          <Scrubber />
-          <main className="fermas-scroll flex-1">
-            {state.error && <Notice tone="err">{state.error}</Notice>}
-            <StepBanner />
-            <PredictFirst />
-            {state.lens === 'concurrency' ? (
-              <ConcurrencyLens snapshot={snapshot} />
-            ) : (
-              <MemoryLens snapshot={snapshot} />
-            )}
-          </main>
-          <Console />
-        </>
+      {state.error && (
+        <div className="p-2">
+          <Notice tone="err">{state.error}</Notice>
+        </div>
       )}
+
+      <main className="fermas-scroll flex-1 overflow-y-auto">
+        {currentView === 'visualizer' && <DynamicVisualizerView />}
+        {currentView === 'recursion-tree' && <RecursionTreeView />}
+        {currentView === 'timeline-memory' && <TimelineMemoryDiffView />}
+        {currentView === 'algo-hub' && <AlgorithmHubView />}
+      </main>
+
+      <Console />
     </div>
   );
 }

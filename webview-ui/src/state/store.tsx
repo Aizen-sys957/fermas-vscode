@@ -34,6 +34,9 @@ export interface AppState {
   activeModule?: CurriculumModule;
   answerIndex?: number;
   error?: string;
+  liveSync: boolean;
+  selectedCallNodeId?: string;
+  selectedHeapNodeId?: string;
 }
 
 type Action =
@@ -55,14 +58,17 @@ type Action =
   | { type: 'playing'; playing: boolean }
   | { type: 'rate'; rate: PlaybackRate }
   | { type: 'answer'; index: number }
-  | { type: 'module'; module?: CurriculumModule };
+  | { type: 'module'; module?: CurriculumModule }
+  | { type: 'liveSync'; enabled: boolean }
+  | { type: 'selectCallNode'; id?: string }
+  | { type: 'selectHeapNode'; id?: string };
 
 const persisted = readPersisted();
 
 const initialState: AppState = {
   source: 'none',
-  viewMode: persisted?.viewMode ?? 'editor',
-  lens: persisted?.lens ?? 'concurrency',
+  viewMode: persisted?.viewMode ?? 'visualizer',
+  lens: persisted?.lens ?? 'memory',
   language: 'javascript',
   fileName: '',
   snapshots: [],
@@ -70,6 +76,7 @@ const initialState: AppState = {
   playing: false,
   rate: 1,
   modules: [],
+  liveSync: persisted?.liveSync ?? true,
 };
 
 function clamp(tick: number, total: number): number {
@@ -92,7 +99,7 @@ function reducer(state: AppState, action: Action): AppState {
         playing: false,
         answerIndex: undefined,
         error: action.error,
-        viewMode: 'editor',
+        viewMode: state.viewMode === 'algo-hub' || state.viewMode === 'lessons' ? 'visualizer' : state.viewMode,
       };
     }
     case 'goto':
@@ -112,7 +119,13 @@ function reducer(state: AppState, action: Action): AppState {
     case 'answer':
       return { ...state, answerIndex: action.index };
     case 'module':
-      return { ...state, activeModule: action.module, viewMode: 'editor', answerIndex: undefined };
+      return { ...state, activeModule: action.module, viewMode: 'visualizer', answerIndex: undefined };
+    case 'liveSync':
+      return { ...state, liveSync: action.enabled };
+    case 'selectCallNode':
+      return { ...state, selectedCallNodeId: action.id };
+    case 'selectHeapNode':
+      return { ...state, selectedHeapNodeId: action.id };
     default:
       return state;
   }
@@ -136,6 +149,12 @@ interface StoreValue {
   loadModule: (id: string) => void;
   loadFixture: (name: FixtureName) => void;
   openPanel: () => void;
+  revealLine: (line: number) => void;
+  toggleLiveSync: (enabled?: boolean) => void;
+  importGitHub: (repoUrl: string, branch?: string, path?: string) => void;
+  jumpToAnomaly: () => void;
+  setSelectedCallNodeId: (id?: string) => void;
+  setSelectedHeapNodeId: (id?: string) => void;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -143,8 +162,6 @@ const StoreContext = createContext<StoreValue | null>(null);
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  // Keep the latest values reachable from the message listener without
-  // re-subscribing on every tick.
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -178,13 +195,54 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setLens = useCallback((lens: Lens) => dispatch({ type: 'lens', lens }), []);
   const setViewMode = useCallback((viewMode: ViewMode) => {
     dispatch({ type: 'viewMode', viewMode });
-    if (viewMode === 'lessons') post({ type: 'REQUEST_CURRICULUM' });
+    if (viewMode === 'algo-hub' || viewMode === 'lessons') post({ type: 'REQUEST_CURRICULUM' });
   }, []);
   const answerQuiz = useCallback((index: number) => dispatch({ type: 'answer', index }), []);
   const retrace = useCallback(() => post({ type: 'REQUEST_RETRACE' }), []);
   const requestCurriculum = useCallback(() => post({ type: 'REQUEST_CURRICULUM' }), []);
   const loadModule = useCallback((id: string) => post({ type: 'LOAD_MODULE', id }), []);
   const openPanel = useCallback(() => post({ type: 'OPEN_PANEL' }), []);
+  const revealLine = useCallback((line: number) => post({ type: 'REVEAL_LINE', line }), []);
+
+  const toggleLiveSync = useCallback((enabled?: boolean) => {
+    const next = enabled !== undefined ? enabled : !stateRef.current.liveSync;
+    dispatch({ type: 'liveSync', enabled: next });
+    post({ type: 'TOGGLE_LIVE_SYNC', enabled: next });
+  }, []);
+
+  const importGitHub = useCallback((repoUrl: string, branch?: string, path?: string) => {
+    post({ type: 'IMPORT_GITHUB', repoUrl, branch, path });
+  }, []);
+
+  const setSelectedCallNodeId = useCallback((id?: string) => {
+    dispatch({ type: 'selectCallNode', id });
+  }, []);
+
+  const setSelectedHeapNodeId = useCallback((id?: string) => {
+    dispatch({ type: 'selectHeapNode', id });
+  }, []);
+
+  const jumpToAnomaly = useCallback(() => {
+    const { snapshots, tick } = stateRef.current;
+    if (snapshots.length === 0) return;
+
+    // Search forward from current tick + 1
+    for (let i = tick + 1; i < snapshots.length; i++) {
+      const snap = snapshots[i];
+      if (snap.diagnostics && snap.diagnostics.length > 0) {
+        goto(i);
+        return;
+      }
+    }
+    // Wrap around to start if not found
+    for (let i = 0; i <= tick; i++) {
+      const snap = snapshots[i];
+      if (snap.diagnostics && snap.diagnostics.length > 0) {
+        goto(i);
+        return;
+      }
+    }
+  }, [goto]);
 
   const loadFixture = useCallback(
     (name: FixtureName) => {
@@ -224,6 +282,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         case 'OPEN_CURRICULUM':
           dispatch({ type: 'curriculum', modules: message.modules });
           break;
+        case 'SET_LIVE_SYNC':
+          dispatch({ type: 'liveSync', enabled: message.enabled });
+          break;
         case 'SET_ERROR':
           dispatch({ type: 'error', message: message.message });
           break;
@@ -249,6 +310,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(interval);
   }, [state.playing, state.rate, goto]);
 
+
   // Persist across panel hide/show
   useEffect(() => {
     persist({ viewMode: state.viewMode, lens: state.lens, tick: state.tick });
@@ -273,6 +335,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       loadModule,
       loadFixture,
       openPanel,
+      revealLine,
+      toggleLiveSync,
+      importGitHub,
+      jumpToAnomaly,
+      setSelectedCallNodeId,
+      setSelectedHeapNodeId,
     }),
     [
       state,
@@ -290,8 +358,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       loadModule,
       loadFixture,
       openPanel,
+      revealLine,
+      toggleLiveSync,
+      importGitHub,
+      jumpToAnomaly,
+      setSelectedCallNodeId,
+      setSelectedHeapNodeId,
     ],
   );
+
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

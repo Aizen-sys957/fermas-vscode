@@ -31,12 +31,30 @@ export class FermasWebviewProvider implements vscode.WebviewViewProvider {
   private currentFileName = '';
   private currentError?: string;
   private currentModuleId?: string;
+  private isLiveSyncEnabled = true;
+  private liveSyncTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly decorations: FermasDecorations,
     private readonly inlayHints: FermasInlayHintsProvider,
   ) {}
+
+  public onDocumentChange(doc: vscode.TextDocument): void {
+    if (!this.isLiveSyncEnabled) return;
+    const activeEditor = vscode.window.activeTextEditor;
+    if (!activeEditor || activeEditor.document !== doc) return;
+    if (doc.uri.scheme !== 'file' && doc.uri.scheme !== 'untitled') return;
+
+    if (this.liveSyncTimer) {
+      clearTimeout(this.liveSyncTimer);
+    }
+
+    this.liveSyncTimer = setTimeout(() => {
+      void this.runTraceOnActiveEditor();
+    }, 350);
+  }
+
 
   // -------------------------------------------------------------------------
   // Webview hosting
@@ -188,6 +206,19 @@ export class FermasWebviewProvider implements vscode.WebviewViewProvider {
           this.openInBesidePanel();
           break;
         }
+        case 'TOGGLE_LIVE_SYNC': {
+          this.isLiveSyncEnabled = Boolean(message.enabled);
+          this.postToWebviews({ type: 'SET_LIVE_SYNC', enabled: this.isLiveSyncEnabled });
+          break;
+        }
+        case 'IMPORT_GITHUB': {
+          await this.importFromGitHub(
+            String(message.repoUrl || ''),
+            String(message.branch || 'main'),
+            String(message.path || '')
+          );
+          break;
+        }
         case 'REVEAL_LINE': {
           const line = Number(message.line);
           const editor = vscode.window.activeTextEditor;
@@ -199,6 +230,82 @@ export class FermasWebviewProvider implements vscode.WebviewViewProvider {
       }
     });
   }
+
+  private async importFromGitHub(repoInput: string, branch: string, filePath: string): Promise<void> {
+    try {
+      // Clean up input
+      let rawUrl = '';
+      const trimmed = repoInput.trim().replace(/^https?:\/\//, '');
+
+      if (trimmed.startsWith('raw.githubusercontent.com/')) {
+        rawUrl = `https://${trimmed}`;
+      } else if (trimmed.startsWith('github.com/')) {
+        const parts = trimmed.replace('github.com/', '').split('/');
+        const owner = parts[0];
+        const repo = parts[1];
+        const subPath = parts.slice(2).join('/') || filePath || 'solution.ts';
+        rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch || 'main'}/${subPath}`;
+      } else {
+        const parts = trimmed.split('/');
+        if (parts.length >= 2) {
+          const owner = parts[0];
+          const repo = parts[1];
+          const subPath = parts.slice(2).join('/') || filePath || 'solution.ts';
+          rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch || 'main'}/${subPath}`;
+        }
+      }
+
+      if (!rawUrl) {
+        throw new Error('Please provide a valid GitHub repo format (e.g. github.com/owner/repo)');
+      }
+
+      const res = await fetch(rawUrl);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch from GitHub (HTTP ${res.status}): ${rawUrl}`);
+      }
+
+      const code = await res.text();
+      const detectedLang = rawUrl.endsWith('.py')
+        ? 'python'
+        : rawUrl.endsWith('.rs')
+        ? 'rust'
+        : rawUrl.endsWith('.ts')
+        ? 'typescript'
+        : 'javascript';
+
+      this.currentLanguage = detectedLang;
+      this.currentFileName = rawUrl.split('/').pop() || 'github-solution.ts';
+
+      const result = this.engine.trace(code, detectedLang);
+      this.currentSnapshots = result.snapshots;
+      this.currentTick = 0;
+      this.currentError = result.error;
+
+      this.postToWebviews({
+        type: 'SET_TRACE',
+        snapshots: this.currentSnapshots,
+        language: this.currentLanguage,
+        currentTick: 0,
+        fileName: this.currentFileName,
+        error: this.currentError,
+      });
+
+      // Open in VS Code editor
+      const doc = await vscode.workspace.openTextDocument({
+        content: code,
+        language: detectedLang,
+      });
+      await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+      this.syncStepToEditor(0);
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`GitHub Ingestion: ${err?.message || err}`);
+      this.postToWebviews({
+        type: 'SET_ERROR',
+        message: `GitHub Ingestion Error: ${err?.message || err}`
+      });
+    }
+  }
+
 
   private async loadModule(id: string): Promise<void> {
     const module = await this.curriculum.fetchCurriculum().then((modules) =>

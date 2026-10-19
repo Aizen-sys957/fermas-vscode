@@ -7,33 +7,47 @@
  */
 import type {
   CallFrame,
+  CallTreeNode,
   ConcurrencyState,
   CurriculumModule,
+  DebuggerDiagnostic,
   HeapObject,
   InferredPointer,
+  MemoryDiff,
   MemorySnapshot,
   QuizQuestion,
   ScopeVariable,
   SupportedLanguage,
+  TimelinePoint,
 } from '../../src/engine/types';
 
 export type {
   CallFrame,
+  CallTreeNode,
   ConcurrencyState,
   CurriculumModule,
+  DebuggerDiagnostic,
   HeapObject,
   InferredPointer,
+  MemoryDiff,
   MemorySnapshot,
   QuizQuestion,
   ScopeVariable,
   SupportedLanguage,
+  TimelinePoint,
 };
 
 /** Two lenses over one snapshot stream. */
 export type Lens = 'concurrency' | 'memory';
 
-/** Which source of code the panel is visualising. */
-export type ViewMode = 'editor' | 'lessons';
+/** Which view the panel is rendering (aligned with the 4 Stitch screens). */
+export type ViewMode =
+  | 'visualizer'      // Slide 1: Fermas Dynamic Visualizer Workspace
+  | 'recursion-tree'  // Slide 2: Recursion Tree & Dynamic Call Graph
+  | 'timeline-memory' // Slide 3: Timeline Scrubber & Memory Heap Diff
+  | 'algo-hub'        // Slide 4: Algorithm Hub & GitHub Importer
+  | 'editor'          // Backwards compat alias for 'visualizer'
+  | 'lessons';        // Backwards compat alias for 'algo-hub'
 
 export type PlaybackRate = 0.25 | 0.5 | 1 | 2 | 4;
 
@@ -54,6 +68,7 @@ export type HostMessage =
   | { type: 'GOTO_TICK'; tick: number }
   | { type: 'SET_CURRICULUM'; modules: CurriculumModule[] }
   | { type: 'OPEN_CURRICULUM'; modules: CurriculumModule[] }
+  | { type: 'SET_LIVE_SYNC'; enabled: boolean }
   | { type: 'SET_ERROR'; message: string };
 
 // ---------------------------------------------------------------------------
@@ -66,11 +81,15 @@ export type WebviewMessage =
   | { type: 'REQUEST_CURRICULUM' }
   | { type: 'LOAD_MODULE'; id: string }
   | { type: 'OPEN_PANEL' }
-  | { type: 'REVEAL_LINE'; line: number };
+  | { type: 'REVEAL_LINE'; line: number }
+  | { type: 'IMPORT_GITHUB'; repoUrl: string; branch?: string; path?: string }
+  | { type: 'TOGGLE_LIVE_SYNC'; enabled: boolean };
 
 /** Persisted across panel hides via vscode.setState(). */
 export interface PersistedState {
   viewMode: ViewMode;
   lens: Lens;
   tick: number;
+  liveSync?: boolean;
 }
+

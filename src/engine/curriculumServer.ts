@@ -2,6 +2,136 @@ import { CurriculumModule } from './types';
 
 export const BUILTIN_CURRICULUM: CurriculumModule[] = [
   {
+    id: 'two-sum',
+    title: 'Two Sum (Two Pointers)',
+    category: 'Algorithms & DSA',
+    language: 'typescript',
+    difficulty: 'Beginner',
+    description: 'Find indices that sum to target using bidirectional pointers narrowing from edges with instant collision detection.',
+    tags: ['DSA', 'Two Pointers', 'Arrays', 'Sorting'],
+    code: `export function twoSum(nums: number[], target: number): number[] {
+  let left = 0;
+  let right = nums.length - 1;
+
+  while (left < right) {
+    const currentSum = nums[left] + nums[right];
+    if (currentSum === target) {
+      return [left, right];
+    } else if (currentSum < target) {
+      left++;
+    } else {
+      right--;
+    }
+  }
+  return [-1, -1];
+}
+
+const dataset = [2, 7, 11, 15, 13, 20, 24, 36];
+twoSum(dataset, 39);`,
+  },
+  {
+    id: 'merge-sort',
+    title: 'Merge Sort (Divide & Conquer)',
+    category: 'Algorithms & DSA',
+    language: 'typescript',
+    difficulty: 'Intermediate',
+    description: 'Recursively split arrays into halves and merge sorted subarrays to demonstrate call tree expansion and stack unwinding.',
+    tags: ['Sorting', 'Recursion', 'Call Tree', 'Divide & Conquer'],
+    code: `export function mergeSort(arr: number[]): number[] {
+  if (arr.length <= 1) return arr;
+  const mid = Math.floor(arr.length / 2);
+  const left = mergeSort(arr.slice(0, mid));
+  const right = mergeSort(arr.slice(mid));
+  return merge(left, right);
+}
+
+function merge(left: number[], right: number[]): number[] {
+  const result: number[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < left.length && j < right.length) {
+    if (left[i] < right[j]) {
+      result.push(left[i++]);
+    } else {
+      result.push(right[j++]);
+    }
+  }
+  return result.concat(left.slice(i)).concat(right.slice(j));
+}
+
+mergeSort([38, 27, 43, 3, 9, 82, 10]);`,
+  },
+  {
+    id: 'binary-search-tree',
+    title: 'Binary Search Tree Insertion & Pointers',
+    category: 'Memory & Pointers',
+    language: 'typescript',
+    difficulty: 'Intermediate',
+    description: 'Construct binary search tree heap nodes with directed left and right pointers and trace logarithmic key lookup.',
+    tags: ['Trees', 'Heap Nodes', 'Pointers', 'Data Structures'],
+    code: `class TreeNode {
+  val: number;
+  left: any = null;
+  right: any = null;
+  constructor(val: number) {
+    this.val = val;
+  }
+}
+
+function insertBST(root: any, val: number): any {
+  if (!root) return new TreeNode(val);
+  if (val < root.val) {
+    root.left = insertBST(root.left, val);
+  } else {
+    root.right = insertBST(root.right, val);
+  }
+  return root;
+}
+
+let root = new TreeNode(5);
+insertBST(root, 3);
+insertBST(root, 8);
+insertBST(root, 1);
+insertBST(root, 4);`,
+  },
+  {
+    id: 'n-queens',
+    title: 'N-Queens Backtracking & Pruning',
+    category: 'Algorithms & DSA',
+    language: 'typescript',
+    difficulty: 'Advanced',
+    description: 'Place N non-attacking queens on chessboard with dynamic constraint validation and recursive state backtracking.',
+    tags: ['Backtracking', 'Recursion', 'Call Tree', 'DSA'],
+    code: `function solveNQueens(n: number): number {
+  let count = 0;
+  const cols = new Set<number>();
+  const diag1 = new Set<number>();
+  const diag2 = new Set<number>();
+
+  function backtrack(row: number) {
+    if (row === n) {
+      count++;
+      return;
+    }
+    for (let col = 0; col < n; col++) {
+      if (cols.has(col) || diag1.has(row - col) || diag2.has(row + col)) continue;
+      cols.add(col);
+      diag1.add(row - col);
+      diag2.add(row + col);
+      backtrack(row + 1);
+      cols.delete(col);
+      diag1.delete(row - col);
+      diag2.delete(row + col);
+    }
+  }
+
+  backtrack(0);
+  return count;
+}
+
+solveNQueens(4);`,
+  },
+  {
     id: 'three-sum-two-pointers',
     title: 'Three-Sum & The Two-Pointer Convergence',
     category: 'Algorithms & DSA',
@@ -45,6 +175,7 @@ for (let i = 0; i < nums.length - 2; i++) {
       explanation: 'Since the array is sorted in ascending order, nums[left + 1] >= nums[left]. Incrementing left is the only move guaranteed to increase or maintain the sum.'
     }
   },
+
   {
     id: 'js-microtask-starvation',
     title: 'The JavaScript Microtask Priority Trap',

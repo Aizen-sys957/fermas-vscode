@@ -62,13 +62,17 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // Refresh CodeLens on document changes
+  // Refresh CodeLens and trigger real-time debounced live sync on document changes
   context.subscriptions.push(
-    vscode.workspace.onDidChangeTextDocument(() => codeLensProvider.refresh()),
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      codeLensProvider.refresh();
+      webviewProvider.onDocumentChange(e.document);
+    }),
     vscode.window.onDidChangeActiveTextEditor(() => codeLensProvider.refresh()),
     decorations
   );
 }
+
 
 export function deactivate() {
   console.log('⚡ Fermas extension deactivated.');

@@ -1,7 +1,17 @@
 import * as ts from 'typescript';
-import { MemorySnapshot, CallFrame, HeapObject, InferredPointer, SupportedLanguage } from './types';
+import {
+  CallFrame,
+  CallTreeNode,
+  DebuggerDiagnostic,
+  HeapObject,
+  InferredPointer,
+  MemoryDiff,
+  MemorySnapshot,
+  SupportedLanguage,
+  TimelinePoint,
+} from './types';
 
-const POINTER_COLORS = ['#818cf8', '#34d399', '#38bdf8', '#fbbf24', '#f472b6', '#a78bfa'];
+const POINTER_COLORS = ['#00f2fe', '#8b5cf6', '#10b981', '#f59e0b', '#f43f5e', '#6366f1', '#38bdf8', '#fbbf24'];
 const BLOCKED_GLOBALS = new Set([
   'process', 'require', 'global', 'globalThis', 'window', 'document',
   'eval', 'Function', 'module', 'exports', 'importScripts', 'child_process', 'fs'
@@ -18,56 +28,70 @@ export interface InterpreterFrame {
 export class AstInterpreter {
   private snapshots: MemorySnapshot[] = [];
   private heapStore = new Map<string, HeapObject>();
+  private rawObjectToHeapId = new Map<any, string>();
   private stdoutLog: string[] = [];
   private heapCounter = 1;
   private callStack: InterpreterFrame[] = [];
   private userFunctions = new Map<string, ts.FunctionDeclaration>();
+  private userClasses = new Map<string, ts.ClassDeclaration>();
   private microtasks: string[] = [];
   private macrotasks: string[] = [];
   private unpolledFutures: string[] = [];
   private arrayIndexAccessMap = new Map<string, Set<string>>(); // arrayVarName -> Set of indexVarNames
   private stepCount = 0;
-  private readonly MAX_STEPS = 800;
+  private readonly MAX_STEPS = 900;
   private sourceFile!: ts.SourceFile;
   private originalLines: string[] = [];
+
+  // Enhanced features
+  private callTreeNodes: CallTreeNode[] = [];
+  private callTreeCounter = 1;
+  private activeCallTreeId?: string;
+  private loopCounters = new Map<number, number>();
+  private activeDiagnostics: DebuggerDiagnostic[] = [];
 
   public trace(code: string, language: SupportedLanguage): MemorySnapshot[] {
     this.snapshots = [];
     this.heapStore.clear();
+    this.rawObjectToHeapId.clear();
     this.stdoutLog = [];
     this.heapCounter = 1;
     this.callStack = [];
     this.userFunctions.clear();
+    this.userClasses.clear();
     this.microtasks = [];
     this.macrotasks = [];
     this.unpolledFutures = [];
     this.arrayIndexAccessMap.clear();
     this.stepCount = 0;
-    this.originalLines = code.split('\n');
+    const normalizedCode = code.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    this.originalLines = normalizedCode.split('\n');
+    this.callTreeNodes = [];
+    this.callTreeCounter = 1;
+    this.loopCounters.clear();
+    this.activeDiagnostics = [];
 
     // 1. Language Preprocessing:
-    // If TypeScript, transpile to strip types cleanly (fixes F4)
-    let processedCode = code;
+    let processedCode = normalizedCode;
     if (language === 'typescript') {
-      processedCode = ts.transpileModule(code, {
+      processedCode = ts.transpileModule(normalizedCode, {
         compilerOptions: { target: ts.ScriptTarget.ES2022, removeComments: false }
       }).outputText;
     } else if (language === 'python') {
-      processedCode = this.pythonToJs(code);
+      processedCode = this.pythonToJs(normalizedCode);
     } else if (language === 'rust') {
-      processedCode = this.rustToJs(code);
+      processedCode = this.rustToJs(normalizedCode);
     }
+
 
     // 2. Parse into TypeScript AST
     this.sourceFile = ts.createSourceFile('code.ts', processedCode, ts.ScriptTarget.ES2022, true);
 
-    // 3. Pre-scan AST for all array indexing expressions to record valid index variables (fixes F6)
+    // 3. Pre-scan AST for indexing expressions and function/class declarations
     this.scanIndexAccesses(this.sourceFile);
+    this.scanDeclarations(this.sourceFile);
 
-    // 4. Register top-level function declarations (fixes F3)
-    this.scanFunctions(this.sourceFile);
-
-    // 5. Initialize global call frame
+    // 4. Initialize global call frame & root call tree node
     const globalFrame: InterpreterFrame = {
       frameId: 'frame-main',
       functionName: 'main',
@@ -76,35 +100,69 @@ export class AstInterpreter {
     };
     this.callStack.push(globalFrame);
 
-    // Initial snapshot
-    this.recordSnapshot(1, this.originalLines[0] || '', 'init', 'Initializing execution environment.', globalFrame);
+    const rootCallNode: CallTreeNode = {
+      id: 'call_root',
+      functionName: 'main',
+      args: {},
+      depth: 0,
+      startTick: 1,
+      status: 'active',
+      children: []
+    };
+    this.callTreeNodes.push(rootCallNode);
+    this.activeCallTreeId = rootCallNode.id;
 
-    // 6. Execute top-level statements with true loop & branching control flow (fixes F1, F2)
+    // Initial snapshot
+    this.recordSnapshot(1, this.originalLines[0] || '', 'init', 'Initializing runtime execution environment & memory layout.', globalFrame);
+
+    // 5. Execute top-level statements
     try {
       for (const statement of this.sourceFile.statements) {
-        if (ts.isFunctionDeclaration(statement)) continue; // Already scanned
+        if (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) continue;
         if (this.stepCount >= this.MAX_STEPS) break;
         const signal = this.executeStatement(statement, globalFrame);
         if (signal === 'return') break;
       }
     } catch (err: any) {
-      this.recordSnapshot(1, '', 'step', `Execution notice: ${err?.message || err}`, globalFrame);
+      this.activeDiagnostics.push({
+        type: 'error',
+        title: 'Runtime Evaluation Error',
+        message: err?.message || String(err),
+        line: 1,
+        suggestedFix: 'Review syntax and runtime operations for unhandled expressions.'
+      });
+      this.recordSnapshot(1, '', 'step', `Runtime error: ${err?.message || err}`, globalFrame);
     }
 
-    // 7. Drain Event Loop queues (Microtasks before Macrotasks)
+    // 6. Drain Event Loop queues
     this.drainEventLoop(globalFrame);
 
-    // 8. Finalize totalTicks
+    // Finalize root call tree node
+    rootCallNode.status = 'resolved';
+    rootCallNode.endTick = this.snapshots.length;
+
+    // 7. Finalize totalTicks and timelineTrack
     const total = this.snapshots.length;
+    const timeline: TimelinePoint[] = this.snapshots.map((s, idx) => ({
+      tick: idx + 1,
+      callDepth: s.callStack.length,
+      allocations: (s.memoryDiff?.changedHeapObjects || []).map(id => ({ id, label: id })),
+      mutationCount: s.memoryDiff?.mutationsCount || 0,
+      activeLine: s.line,
+      isBreakpoint: s.event === 'loop' || s.event === 'call',
+      hasAnomaly: (s.diagnostics || []).some(d => d.type === 'error' || d.type === 'warning')
+    }));
+
     this.snapshots.forEach((s, idx) => {
       s.tick = idx + 1;
       s.totalTicks = total;
+      s.timelineTrack = timeline;
     });
 
     return this.snapshots;
   }
 
-  // --- Statement Execution (Fixes F1, F2, F3) ---
+  // --- Statement Execution ---
 
   private executeStatement(node: ts.Statement, frame: InterpreterFrame): 'none' | 'break' | 'continue' | 'return' {
     if (this.stepCount++ >= this.MAX_STEPS) return 'none';
@@ -122,9 +180,19 @@ export class AstInterpreter {
 
         if (Array.isArray(val)) {
           this.allocateHeapArray(varName, val);
+        } else if (val && typeof val === 'object' && !this.rawObjectToHeapId.has(val)) {
+          this.allocateHeapObject(val);
         }
 
-        this.recordSnapshot(line, lineText, 'step', `Declared '${varName}' = ${this.formatVal(val)}`, frame, `[${varName} = ${this.formatVal(val)}]`);
+        const formatted = this.formatVal(val);
+        this.recordSnapshot(
+          line,
+          lineText,
+          'step',
+          `Declared variable '${varName}' initialized to ${formatted}`,
+          frame,
+          `[${varName} = ${formatted}]`
+        );
       }
       return 'none';
     }
@@ -154,13 +222,23 @@ export class AstInterpreter {
       const condStr = node.expression.getText(this.sourceFile);
       const isTrue = Boolean(condVal);
 
-      this.recordSnapshot(line, lineText, 'step', `Branch check '${condStr}': evaluates to ${isTrue}.`, frame, `[${isTrue ? 'Branch Taken' : 'Branch Skipped'}]`, {
-        expression: condStr,
-        result: isTrue ? 'TRUE (Taking branch)' : 'FALSE (Skipping branch)',
-        isSatisfied: isTrue
-      });
+      // Check for possible comparison expression
+      const evaluatedEq = this.tryBuildComparisonExpression(node.expression, frame, isTrue);
 
-      // Crucial Fix for F2: Only ONE branch executes!
+      this.recordSnapshot(
+        line,
+        lineText,
+        'step',
+        `Branch condition '${condStr}' evaluated to ${isTrue ? 'TRUE' : 'FALSE'}. ${isTrue ? 'Entering then-branch.' : 'Skipping then-branch.'}`,
+        frame,
+        `[${isTrue ? 'Branch Taken' : 'Branch Skipped'}]`,
+        evaluatedEq || {
+          expression: condStr,
+          result: isTrue ? 'TRUE (Taking branch)' : 'FALSE (Skipping branch)',
+          isSatisfied: isTrue
+        }
+      );
+
       if (isTrue) {
         return this.executeStatement(node.thenStatement, frame);
       } else if (node.elseStatement) {
@@ -169,30 +247,52 @@ export class AstInterpreter {
       return 'none';
     }
 
-    // Crucial Fix for F1: True While Loop with Condition Re-evaluation & Back-Jumps
     if (ts.isWhileStatement(node)) {
+      let iter = 0;
       while (this.stepCount < this.MAX_STEPS) {
+        iter++;
+        this.loopCounters.set(line, (this.loopCounters.get(line) || 0) + 1);
+        const loopCount = this.loopCounters.get(line)!;
+
+        if (loopCount > 60) {
+          this.activeDiagnostics.push({
+            type: 'warning',
+            title: 'Potential Infinite Loop Detected',
+            message: `While loop at line ${line} has executed ${loopCount} iterations without terminating. Check pointer advancement.`,
+            line,
+            suggestedFix: 'Verify loop invariants and that pointers (e.g. left++, right--) are advancing properly.'
+          });
+        }
+
         const condVal = this.evalExpression(node.expression, frame);
         const condStr = node.expression.getText(this.sourceFile);
         const isTrue = Boolean(condVal);
 
-        this.recordSnapshot(line, lineText, 'loop', `While loop condition '${condStr}': evaluates to ${isTrue}.`, frame, `[Condition: ${isTrue ? 'TRUE' : 'FALSE'}]`, {
-          expression: condStr,
-          result: isTrue ? 'TRUE (Iterating)' : 'FALSE (Exiting loop)',
-          isSatisfied: isTrue
-        });
+        const evaluatedEq = this.tryBuildComparisonExpression(node.expression, frame, isTrue);
+
+        this.recordSnapshot(
+          line,
+          lineText,
+          'loop',
+          `While condition '${condStr}': evaluated to ${isTrue ? 'TRUE' : 'FALSE'}. Iteration ${iter}.`,
+          frame,
+          `[Condition: ${isTrue ? 'TRUE' : 'FALSE'}]`,
+          evaluatedEq || {
+            expression: condStr,
+            result: isTrue ? `TRUE (Iteration ${iter})` : 'FALSE (Loop finished)',
+            isSatisfied: isTrue
+          }
+        );
 
         if (!isTrue) break;
 
         const signal = this.executeStatement(node.statement, frame);
         if (signal === 'break') break;
         if (signal === 'return') return 'return';
-        // 'continue' naturally restarts the while loop condition check!
       }
       return 'none';
     }
 
-    // Crucial Fix for F1: True For Loop with Initializer, Condition, Increment, and Iteration
     if (ts.isForStatement(node)) {
       if (node.initializer) {
         if (ts.isVariableDeclarationList(node.initializer)) {
@@ -206,7 +306,9 @@ export class AstInterpreter {
         }
       }
 
+      let iter = 0;
       while (this.stepCount < this.MAX_STEPS) {
+        iter++;
         let isTrue = true;
         let condStr = 'true';
         if (node.condition) {
@@ -214,7 +316,14 @@ export class AstInterpreter {
           isTrue = Boolean(this.evalExpression(node.condition, frame));
         }
 
-        this.recordSnapshot(line, lineText, 'loop', `For loop condition '${condStr}': evaluates to ${isTrue}.`, frame, `[Condition: ${isTrue ? 'TRUE' : 'FALSE'}]`);
+        this.recordSnapshot(
+          line,
+          lineText,
+          'loop',
+          `For loop condition '${condStr}': evaluated to ${isTrue ? 'TRUE' : 'FALSE'}. Iteration ${iter}.`,
+          frame,
+          `[Condition: ${isTrue ? 'TRUE' : 'FALSE'}]`
+        );
 
         if (!isTrue) break;
 
@@ -222,7 +331,6 @@ export class AstInterpreter {
         if (signal === 'break') break;
         if (signal === 'return') return 'return';
 
-        // Execute the incrementor (forMatch[4] from F1 finding)
         if (node.incrementor) {
           this.evalExpression(node.incrementor, frame);
         }
@@ -244,7 +352,14 @@ export class AstInterpreter {
         retVal = this.evalExpression(node.expression, frame);
       }
       (frame as any).returnValue = retVal;
-      this.recordSnapshot(line, lineText, 'return', `Return: returned ${this.formatVal(retVal)}`, frame, `[Return: ${this.formatVal(retVal)}]`);
+      this.recordSnapshot(
+        line,
+        lineText,
+        'return',
+        `Return statement evaluated: returning ${this.formatVal(retVal)} to caller.`,
+        frame,
+        `[Return: ${this.formatVal(retVal)}]`
+      );
       return 'return';
     }
 
@@ -259,7 +374,7 @@ export class AstInterpreter {
     return 'none';
   }
 
-  // --- Secure AST Expression Evaluator (Fixes F5) ---
+  // --- Secure AST Expression Evaluator ---
 
   private evalExpression(expr: ts.Expression, frame: InterpreterFrame): any {
     if (ts.isNumericLiteral(expr)) return Number(expr.text);
@@ -270,7 +385,6 @@ export class AstInterpreter {
 
     if (ts.isIdentifier(expr)) {
       const name = expr.text;
-      // Sandbox security: block dangerous Node globals
       if (BLOCKED_GLOBALS.has(name)) return undefined;
       return this.lookupVariable(name, frame);
     }
@@ -314,7 +428,7 @@ export class AstInterpreter {
     if (ts.isBinaryExpression(expr)) {
       const op = expr.operatorToken.kind;
 
-      // Assignment operations: x = ..., arr[i] = ..., x += ...
+      // Assignment operations: x = ..., arr[i] = ..., node.next = ..., x += ...
       if (op === ts.SyntaxKind.EqualsToken) {
         const rhs = this.evalExpression(expr.right, frame);
         if (ts.isIdentifier(expr.left)) {
@@ -323,8 +437,32 @@ export class AstInterpreter {
           const arr = this.evalExpression(expr.left.expression, frame);
           const idx = this.evalExpression(expr.left.argumentExpression, frame);
           if (Array.isArray(arr)) {
+            if (idx < 0 || idx >= arr.length) {
+              this.activeDiagnostics.push({
+                type: 'error',
+                title: 'Array Index Out Of Bounds',
+                message: `Index ${idx} is outside bounds for array of size ${arr.length}.`,
+                line: this.getLineNumber(expr),
+                suggestedFix: 'Clamp index between 0 and array.length - 1.'
+              });
+            }
             arr[idx] = rhs;
             this.updateHeapArrayByRef(arr);
+          }
+        } else if (ts.isPropertyAccessExpression(expr.left)) {
+          const targetObj = this.evalExpression(expr.left.expression, frame);
+          const propName = expr.left.name.text;
+          if (targetObj && typeof targetObj === 'object') {
+            targetObj[propName] = rhs;
+            this.updateHeapObjectByRef(targetObj, propName, rhs);
+          } else if (targetObj === null || targetObj === undefined) {
+            this.activeDiagnostics.push({
+              type: 'error',
+              title: 'Null Pointer Dereference',
+              message: `Cannot assign property '${propName}' of ${targetObj}.`,
+              line: this.getLineNumber(expr),
+              suggestedFix: 'Ensure node reference is non-null before mutating fields.'
+            });
           }
         }
         return rhs;
@@ -372,22 +510,74 @@ export class AstInterpreter {
       const arr = this.evalExpression(expr.expression, frame);
       const idx = this.evalExpression(expr.argumentExpression, frame);
       if (Array.isArray(arr)) {
+        if (idx < 0 || idx >= arr.length) {
+          this.activeDiagnostics.push({
+            type: 'warning',
+            title: 'Index Out of Bounds Access',
+            message: `Reading index ${idx} on array of length ${arr.length} returns undefined.`,
+            line: this.getLineNumber(expr),
+            suggestedFix: 'Check index bounds before subscript access.'
+          });
+        }
         return arr[idx];
       }
       return undefined;
     }
 
-    // Property access: arr.length
+    // Property access: arr.length or node.val / node.next
     if (ts.isPropertyAccessExpression(expr)) {
       const obj = this.evalExpression(expr.expression, frame);
       const prop = expr.name.text;
       if (obj && prop === 'length') return obj.length;
+      if (obj === null || obj === undefined) {
+        this.activeDiagnostics.push({
+          type: 'error',
+          title: 'Null Dereference Warning',
+          message: `Attempted to read property '${prop}' on ${obj}.`,
+          line: this.getLineNumber(expr),
+          suggestedFix: `Check if (${expr.expression.getText(this.sourceFile)} != null) before accessing .${prop}.`
+        });
+        return undefined;
+      }
       return obj ? obj[prop] : undefined;
+    }
+
+    // Object Literal: { val: 10, next: null }
+    if (ts.isObjectLiteralExpression(expr)) {
+      const obj: Record<string, any> = {};
+      for (const prop of expr.properties) {
+        if (ts.isPropertyAssignment(prop)) {
+          const key = prop.name.getText(this.sourceFile);
+          obj[key] = this.evalExpression(prop.initializer, frame);
+        }
+      }
+      return this.allocateHeapObject(obj);
     }
 
     // Array literal: [1, 2, 3]
     if (ts.isArrayLiteralExpression(expr)) {
       return expr.elements.map(el => this.evalExpression(el, frame));
+    }
+
+    // New Expression: new ListNode(10), new TreeNode(5)
+    if (ts.isNewExpression(expr)) {
+      const className = expr.expression.getText(this.sourceFile);
+      const args = expr.arguments ? expr.arguments.map(a => this.evalExpression(a, frame)) : [];
+      const instance: Record<string, any> = {};
+
+      if (className === 'ListNode' || className === 'Node') {
+        instance.val = args[0] !== undefined ? args[0] : 0;
+        instance.next = args[1] !== undefined ? args[1] : null;
+      } else if (className === 'TreeNode' || className === 'BSTNode') {
+        instance.val = args[0] !== undefined ? args[0] : 0;
+        instance.left = args[1] !== undefined ? args[1] : null;
+        instance.right = args[2] !== undefined ? args[2] : null;
+      } else {
+        instance.type = className;
+        args.forEach((a, idx) => { instance[`arg${idx}`] = a; });
+      }
+
+      return this.allocateHeapObject(instance, 'custom_node');
     }
 
     // Conditional ternary: a ? b : c
@@ -401,7 +591,7 @@ export class AstInterpreter {
       return this.evalExpression(expr.expression, frame);
     }
 
-    // Function calls & Real Call Stack (Fixes F3)
+    // Function calls
     if (ts.isCallExpression(expr)) {
       return this.executeCallExpression(expr, frame);
     }
@@ -409,7 +599,7 @@ export class AstInterpreter {
     return undefined;
   }
 
-  // --- Real Function Call Stack & Recursion (Fixes F3) ---
+  // --- Real Function Call Stack & Recursion Tree Tracking ---
 
   private executeCallExpression(expr: ts.CallExpression, frame: InterpreterFrame): any {
     const fnName = expr.expression.getText(this.sourceFile);
@@ -446,18 +636,71 @@ export class AstInterpreter {
       return undefined;
     }
 
-    // Array push / append: res.append / res.push
-    if (ts.isPropertyAccessExpression(expr.expression) && (expr.expression.name.text === 'push' || expr.expression.name.text === 'append')) {
-      const arr = this.evalExpression(expr.expression.expression, frame);
-      const val = this.evalExpression(expr.arguments[0], frame);
-      if (Array.isArray(arr)) {
-        arr.push(val);
-        this.updateHeapArrayByRef(arr);
-        return arr.length;
+    // Built-in Math functions: Math.max, Math.min, Math.floor, Math.abs, Math.ceil, Math.round, Math.pow, Math.sqrt
+    if (fnName.startsWith('Math.')) {
+      const mathMethod = fnName.replace('Math.', '').trim();
+      if (typeof (Math as any)[mathMethod] === 'function') {
+        const args = expr.arguments.map(arg => this.evalExpression(arg, frame));
+        return (Math as any)[mathMethod](...args);
       }
     }
 
-    // User-Defined Function Call: True Call Stack Push & Pop
+    // Array manipulation methods: push, append, pop, shift, unshift, sort, reverse, slice, includes, indexOf
+    if (ts.isPropertyAccessExpression(expr.expression)) {
+      const methodName = expr.expression.name.text;
+      const target = this.evalExpression(expr.expression.expression, frame);
+
+      if (Array.isArray(target)) {
+        if (methodName === 'push' || methodName === 'append') {
+          const val = this.evalExpression(expr.arguments[0], frame);
+          target.push(val);
+          this.updateHeapArrayByRef(target);
+          return target.length;
+        }
+        if (methodName === 'pop') {
+          const val = target.pop();
+          this.updateHeapArrayByRef(target);
+          return val;
+        }
+        if (methodName === 'shift') {
+          const val = target.shift();
+          this.updateHeapArrayByRef(target);
+          return val;
+        }
+        if (methodName === 'unshift') {
+          const args = expr.arguments.map(a => this.evalExpression(a, frame));
+          const res = target.unshift(...args);
+          this.updateHeapArrayByRef(target);
+          return res;
+        }
+        if (methodName === 'sort') {
+          target.sort((a, b) => (typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b))));
+          this.updateHeapArrayByRef(target);
+          return target;
+        }
+        if (methodName === 'reverse') {
+          target.reverse();
+          this.updateHeapArrayByRef(target);
+          return target;
+        }
+        if (methodName === 'slice') {
+          const start = expr.arguments[0] ? this.evalExpression(expr.arguments[0], frame) : undefined;
+          const end = expr.arguments[1] ? this.evalExpression(expr.arguments[1], frame) : undefined;
+          return target.slice(start, end);
+        }
+        if (methodName === 'includes' || methodName === 'contains') {
+          const val = this.evalExpression(expr.arguments[0], frame);
+          return target.includes(val);
+        }
+        if (methodName === 'indexOf') {
+          const val = this.evalExpression(expr.arguments[0], frame);
+          return target.indexOf(val);
+        }
+      }
+    }
+
+
+    // User-Defined Function Call: True Call Stack & Dynamic Call Tree Topology
     const fnDecl = this.userFunctions.get(fnName);
     if (fnDecl && fnDecl.body) {
       const evalArgs = expr.arguments.map(a => this.evalExpression(a, frame));
@@ -473,23 +716,78 @@ export class AstInterpreter {
       };
 
       // Bind arguments to parameters
+      const argRecord: Record<string, any> = {};
       fnDecl.parameters.forEach((param, pIdx) => {
         const pName = param.name.getText(this.sourceFile);
-        newFrame.rawScope[pName] = evalArgs[pIdx];
+        const argVal = evalArgs[pIdx];
+        newFrame.rawScope[pName] = argVal;
+        argRecord[pName] = argVal;
       });
+
+      // Construct CallTreeNode for 2D Recursion Tree
+      const callNodeId = `call_${this.callTreeCounter++}`;
+      const parentNodeId = this.activeCallTreeId;
+      const parentNode = parentNodeId ? this.callTreeNodes.find(n => n.id === parentNodeId) : undefined;
+      if (parentNode) {
+        parentNode.children.push(callNodeId);
+      }
+
+      const callDepth = this.callStack.length;
+      const callNode: CallTreeNode = {
+        id: callNodeId,
+        parentId: parentNodeId,
+        functionName: fnName,
+        args: argRecord,
+        depth: callDepth,
+        startTick: this.snapshots.length + 1,
+        status: 'active',
+        children: []
+      };
+      this.callTreeNodes.push(callNode);
+      const prevActiveCallTreeId = this.activeCallTreeId;
+      this.activeCallTreeId = callNodeId;
+
+      // Check recursion depth limit
+      if (callDepth > 15) {
+        this.activeDiagnostics.push({
+          type: 'warning',
+          title: 'Deep Recursion Depth',
+          message: `Function '${fnName}' reached recursion depth ${callDepth}. Watch for stack overflow.`,
+          line: fnLine,
+          suggestedFix: 'Ensure base case terminates cleanly before reaching recursion limit.'
+        });
+      }
 
       // Push frame onto call stack
       this.callStack.push(newFrame);
-      this.recordSnapshot(fnLine, this.getLineText(fnLine), 'call', `Called function '${fnName}(${evalArgs.map(this.formatVal).join(', ')})'`, newFrame);
+      this.recordSnapshot(
+        fnLine,
+        this.getLineText(fnLine),
+        'call',
+        `Called '${fnName}(${evalArgs.map(this.formatVal).join(', ')})' at recursion depth ${callDepth}.`,
+        newFrame
+      );
 
       // Execute function body statements
       this.executeStatement(fnDecl.body, newFrame);
 
       const retVal = (newFrame as any).returnValue;
 
+      // Mark CallTreeNode as resolved
+      callNode.status = 'resolved';
+      callNode.returnValue = retVal;
+      callNode.endTick = this.snapshots.length + 1;
+      this.activeCallTreeId = prevActiveCallTreeId;
+
       // Pop frame from call stack upon completion
       this.callStack.pop();
-      this.recordSnapshot(fnLine, this.getLineText(fnLine), 'return', `Exited '${fnName}' -> returned ${this.formatVal(retVal)}`, frame);
+      this.recordSnapshot(
+        fnLine,
+        this.getLineText(fnLine),
+        'return',
+        `Function '${fnName}' returned ${this.formatVal(retVal)} to caller frame.`,
+        frame
+      );
 
       return retVal;
     }
@@ -497,12 +795,31 @@ export class AstInterpreter {
     return undefined;
   }
 
-  // --- Strict Array Pointer Inference (Fixes F6) ---
+  // --- Comparison & Arithmetic Step Equation Builder ---
 
-  /**
-   * Scans the AST for all ElementAccessExpressions (e.g. `nums[left]`, `arr[i]`).
-   * Only registers variables that are ACTUALLY used as index variables into specific arrays.
-   */
+  private tryBuildComparisonExpression(expr: ts.Expression, frame: InterpreterFrame, isTrue: boolean): any {
+    try {
+      if (ts.isBinaryExpression(expr)) {
+        const opText = expr.operatorToken.getText(this.sourceFile);
+        const lhsVal = this.evalExpression(expr.left, frame);
+        const rhsVal = this.evalExpression(expr.right, frame);
+        const lhsStr = expr.left.getText(this.sourceFile);
+        const rhsStr = expr.right.getText(this.sourceFile);
+
+        return {
+          expression: `${lhsStr} (${this.formatVal(lhsVal)}) ${opText} ${rhsStr} (${this.formatVal(rhsVal)})`,
+          result: isTrue ? `TRUE (${opText} satisfied)` : `FALSE (${opText} not met)`,
+          isSatisfied: isTrue
+        };
+      }
+    } catch {
+      // Fallback
+    }
+    return undefined;
+  }
+
+  // --- Strict Array Pointer Inference ---
+
   private scanIndexAccesses(node: ts.Node) {
     if (ts.isElementAccessExpression(node)) {
       const arrName = node.expression.getText(this.sourceFile).trim();
@@ -517,10 +834,6 @@ export class AstInterpreter {
     ts.forEachChild(node, n => this.scanIndexAccesses(n));
   }
 
-  /**
-   * Infers pointers ONLY for variables that were verified as index variables for this array.
-   * Completely prevents false-positives like target=0 or sum=0 from over-firing!
-   */
   private inferArrayPointers(currentFrame: InterpreterFrame) {
     let colorIdx = 0;
     this.heapStore.forEach((heapObj, heapId) => {
@@ -531,9 +844,7 @@ export class AstInterpreter {
 
         const pointers: InferredPointer[] = [];
 
-        // Walk scope of active frame
         for (const [vName, vVal] of Object.entries(currentFrame.rawScope)) {
-          // Strict check: Variable MUST have been used in arr[vName] AND must be integer in [0, arrLen)
           if (validIndexVars && validIndexVars.has(vName)) {
             if (typeof vVal === 'number' && Number.isInteger(vVal) && vVal >= 0 && vVal < arrLen) {
               pointers.push({
@@ -551,7 +862,7 @@ export class AstInterpreter {
     });
   }
 
-  // --- Snapshot Recording ---
+  // --- Snapshot Recording with Memory Diffs & Diagnostics ---
 
   private recordSnapshot(
     line: number,
@@ -567,11 +878,12 @@ export class AstInterpreter {
     const snapshotCallStack: CallFrame[] = this.callStack.map(f => {
       const scopeRecord: Record<string, any> = {};
       for (const [k, v] of Object.entries(f.rawScope)) {
+        const heapRef = this.rawObjectToHeapId.get(v);
         scopeRecord[k] = {
           name: k,
-          type: Array.isArray(v) ? 'reference' : 'primitive',
-          value: Array.isArray(v) ? `Array(${v.length})` : v,
-          rawType: typeof v
+          type: Array.isArray(v) || heapRef ? 'reference' : 'primitive',
+          value: heapRef || (Array.isArray(v) ? `Array(${v.length})` : v),
+          rawType: Array.isArray(v) ? 'array' : typeof v
         };
       }
       return {
@@ -587,15 +899,83 @@ export class AstInterpreter {
       heapObj[k] = JSON.parse(JSON.stringify(v));
     });
 
+    // Deep copy of persistent CallTree for this snapshot
+    const callTreeSnapshot: CallTreeNode[] = this.callTreeNodes.map(node => ({
+      ...node,
+      args: { ...node.args },
+      children: [...node.children]
+    }));
+
+    // Calculate memory footprint & memory diff
+    const prev = this.snapshots[this.snapshots.length - 1];
+    let changedVars: string[] = [];
+    let changedHeap: string[] = [];
+    let mutationsCount = 0;
+    let currentHeapBytes = 0;
+
+    for (const h of Object.values(heapObj)) {
+      if (h.type === 'array' && h.elements) {
+        currentHeapBytes += 32 + h.elements.length * 8;
+      } else if (h.fields) {
+        currentHeapBytes += 32 + Object.keys(h.fields).length * 16;
+      }
+    }
+    for (const f of snapshotCallStack) {
+      currentHeapBytes += Object.keys(f.scope).length * 16;
+    }
+
+    if (prev) {
+      const prevTopScope = prev.callStack[prev.callStack.length - 1]?.scope || {};
+      const currTopScope = snapshotCallStack[snapshotCallStack.length - 1]?.scope || {};
+      for (const [k, v] of Object.entries(currTopScope)) {
+        if (!prevTopScope[k] || JSON.stringify(prevTopScope[k].value) !== JSON.stringify(v.value)) {
+          changedVars.push(k);
+          v.isChanged = true;
+          mutationsCount++;
+        }
+      }
+      for (const [id, currO] of Object.entries(heapObj)) {
+        const prevO = prev.heap[id];
+        if (!prevO || JSON.stringify(prevO) !== JSON.stringify(currO)) {
+          changedHeap.push(id);
+          mutationsCount++;
+        }
+      }
+    }
+
+    const prevPeak = prev?.memoryDiff?.peakHeapBytes || 0;
+    const peakHeapBytes = Math.max(prevPeak, currentHeapBytes);
+
+    const memoryDiff: MemoryDiff = {
+      previousTick: prev ? prev.tick : 1,
+      changedVariables: changedVars,
+      changedHeapObjects: changedHeap,
+      heapDeltaBytes: prev ? currentHeapBytes - (prev.memoryDiff?.peakHeapBytes || currentHeapBytes) : currentHeapBytes,
+      peakHeapBytes,
+      totalAllocatedObjects: this.heapStore.size,
+      freedObjects: 0,
+      mutationsCount
+    };
+
+    const diagnostics = [...this.activeDiagnostics];
+    this.activeDiagnostics = []; // Drain
+
+    const safeLine = Math.max(1, Math.min(line, this.originalLines.length));
+    const safeSnippet = (this.getLineText(safeLine) || codeSnippet).trim();
+
     this.snapshots.push({
       tick: this.snapshots.length + 1,
       totalTicks: 0,
-      line,
-      codeSnippet: codeSnippet.trim(),
+      line: safeLine,
+      codeSnippet: safeSnippet,
       event,
       explanation,
       callStack: snapshotCallStack,
       heap: heapObj,
+      callTree: callTreeSnapshot,
+      activeCallTreeId: this.activeCallTreeId,
+      memoryDiff,
+      diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
       concurrency: {
         microtasks: [...this.microtasks],
         macrotasks: [...this.macrotasks],
@@ -607,13 +987,15 @@ export class AstInterpreter {
     });
   }
 
-  // --- Helpers ---
+  // --- Heap & Declaration Helpers ---
 
-  private scanFunctions(node: ts.Node) {
+  private scanDeclarations(node: ts.Node) {
     if (ts.isFunctionDeclaration(node) && node.name) {
       this.userFunctions.set(node.name.text, node);
+    } else if (ts.isClassDeclaration(node) && node.name) {
+      this.userClasses.set(node.name.text, node);
     }
-    ts.forEachChild(node, n => this.scanFunctions(n));
+    ts.forEachChild(node, n => this.scanDeclarations(n));
   }
 
   private lookupVariable(name: string, frame: InterpreterFrame): any {
@@ -631,25 +1013,82 @@ export class AstInterpreter {
       if (name in cur.rawScope) {
         cur.rawScope[name] = val;
         if (Array.isArray(val)) this.updateHeapArray(name, val);
+        else if (val && typeof val === 'object' && !this.rawObjectToHeapId.has(val)) this.allocateHeapObject(val);
         return;
       }
       cur = cur.parentFrame;
     }
     frame.rawScope[name] = val;
     if (Array.isArray(val)) this.allocateHeapArray(name, val);
+    else if (val && typeof val === 'object' && !this.rawObjectToHeapId.has(val)) this.allocateHeapObject(val);
   }
 
   private allocateHeapArray(name: string, arr: any[]) {
     const heapId = `@heap:${this.heapCounter++}`;
     this.heapStore.set(heapId, {
       id: heapId,
+      name,
       type: 'array',
       elements: [...arr],
       inferredPointers: []
     });
+    this.rawObjectToHeapId.set(arr, heapId);
+  }
+
+  private allocateHeapObject(obj: Record<string, any>, preferredType?: 'custom_node' | 'object'): any {
+    if (this.rawObjectToHeapId.has(obj)) {
+      return obj;
+    }
+    const heapId = `@heap:${this.heapCounter++}`;
+    this.rawObjectToHeapId.set(obj, heapId);
+
+    const isNode = ('val' in obj || 'value' in obj || 'data' in obj) &&
+                   ('next' in obj || 'left' in obj || 'right' in obj || 'prev' in obj);
+    const type = preferredType || (isNode ? 'custom_node' : 'object');
+
+    const serializedFields: Record<string, any> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v && typeof v === 'object') {
+        if (this.rawObjectToHeapId.has(v)) {
+          serializedFields[k] = this.rawObjectToHeapId.get(v);
+        } else if (Array.isArray(v)) {
+          serializedFields[k] = `[${v.join(', ')}]`;
+        } else {
+          serializedFields[k] = this.allocateHeapObject(v);
+        }
+      } else {
+        serializedFields[k] = v;
+      }
+    }
+
+    this.heapStore.set(heapId, {
+      id: heapId,
+      type,
+      fields: serializedFields
+    });
+
+    return obj;
+  }
+
+  private updateHeapObjectByRef(obj: any, prop: string, rhs: any) {
+    const heapId = this.rawObjectToHeapId.get(obj);
+    if (heapId && this.heapStore.has(heapId)) {
+      const stored = this.heapStore.get(heapId)!;
+      if (!stored.fields) stored.fields = {};
+      let valToStore = rhs;
+      if (rhs && typeof rhs === 'object' && this.rawObjectToHeapId.has(rhs)) {
+        valToStore = this.rawObjectToHeapId.get(rhs);
+      }
+      stored.fields[prop] = valToStore;
+    }
   }
 
   private updateHeapArray(name: string, arr: any[]) {
+    const heapId = this.rawObjectToHeapId.get(arr);
+    if (heapId && this.heapStore.has(heapId)) {
+      this.heapStore.get(heapId)!.elements = [...arr];
+      return;
+    }
     for (const h of this.heapStore.values()) {
       if (h.type === 'array') {
         h.elements = [...arr];
@@ -659,6 +1098,11 @@ export class AstInterpreter {
   }
 
   private updateHeapArrayByRef(arr: any[]) {
+    const heapId = this.rawObjectToHeapId.get(arr);
+    if (heapId && this.heapStore.has(heapId)) {
+      this.heapStore.get(heapId)!.elements = [...arr];
+      return;
+    }
     for (const h of this.heapStore.values()) {
       if (h.type === 'array' && h.elements) {
         h.elements = [...arr];
@@ -669,6 +1113,7 @@ export class AstInterpreter {
 
   private findVarNameForHeapId(heapId: string, frame: InterpreterFrame): string | undefined {
     for (const [k, v] of Object.entries(frame.rawScope)) {
+      if (this.rawObjectToHeapId.get(v) === heapId) return k;
       if (Array.isArray(v)) return k;
     }
     return undefined;
@@ -681,7 +1126,14 @@ export class AstInterpreter {
       if (logMatch) {
         this.stdoutLog.push(logMatch[1].replace(/["']/g, '').trim());
       }
-      this.recordSnapshot(this.originalLines.length, `// Microtask: ${task}`, 'async_tick', `[Microtask Queue] Executing microtask '${task}'. Strict priority over macrotasks!`, frame, `[Microtask: ${task}]`);
+      this.recordSnapshot(
+        this.originalLines.length,
+        `// Microtask: ${task}`,
+        'async_tick',
+        `[Microtask Queue] Draining microtask '${task}' before any macrotasks run.`,
+        frame,
+        `[Microtask: ${task}]`
+      );
     }
     while (this.macrotasks.length > 0) {
       const task = this.macrotasks.shift()!;
@@ -689,7 +1141,14 @@ export class AstInterpreter {
       if (logMatch) {
         this.stdoutLog.push(logMatch[1].replace(/["']/g, '').trim());
       }
-      this.recordSnapshot(this.originalLines.length, `// Macrotask: ${task}`, 'async_tick', `[Macrotask Queue] Microtasks empty. Executing macrotask '${task}'.`, frame, `[Macrotask: ${task}]`);
+      this.recordSnapshot(
+        this.originalLines.length,
+        `// Macrotask: ${task}`,
+        'async_tick',
+        `[Macrotask Queue] Microtask queue empty. Executing macrotask '${task}'.`,
+        frame,
+        `[Macrotask: ${task}]`
+      );
     }
   }
 
@@ -817,30 +1276,179 @@ export class AstInterpreter {
 
   // --- Rust Preprocessor ---
   private rustToJs(rs: string): string {
-    const lines = rs.split('\n');
+    const lines = rs.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
     const out: string[] = [];
-    const declaredVars = new Set<string>();
+    let inFunction = false;
+    const declaredFunctions: { name: string; paramCount: number }[] = [];
 
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i];
+      const trimmed = line.trim();
 
-      // Track unpolled lazy futures (Rust Pull Model)
+      // Skip empty or comment lines
+      if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*')) {
+        out.push(line);
+        continue;
+      }
+
+      // Track unpolled lazy futures (Rust Pull Model lesson)
       if (line.includes('let') && line.includes('fetch_data_async') && !line.includes('.await')) {
         this.unpolledFutures.push('fut');
       }
 
-      line = line
-        .replace(/println!\("(.*?)",?\s*(.*?)\);?/g, 'console.log($2);')
-        .replace(/vec!\[/g, '[')
-        .replace(/\.len\(\)/g, '.length')
-        .replace(/let\s+mut\s+/g, 'let ')
-        .replace(/let\s+\(mut\s+([a-zA-Z0-9_$]+),\s*mut\s+([a-zA-Z0-9_$]+)\)\s*=\s*\((.+?),\s*(.+?)\);?/g, 'let $1 = $3; let $2 = $4;')
-        .replace(/&mut\s+/g, '')
-        .replace(/&/g, '');
+      // fn name(...) -> ... {
+      const fnMatch = line.match(/^(\s*)(pub\s+)?(async\s+)?fn\s+([a-zA-Z0-9_$]+)\s*\(([\s\S]*?)\)(.*?)\{?$/);
+      if (fnMatch) {
+        const indent = fnMatch[1];
+        const fnName = fnMatch[4];
+        const rawParams = fnMatch[5];
 
-      out.push(line);
+        const cleanParams = rawParams.split(',').map(p => {
+          let clean = p.trim();
+          clean = clean.replace(/&mut\s+/g, '').replace(/&/g, '').replace(/mut\s+/g, '');
+          const colonIdx = clean.indexOf(':');
+          if (colonIdx !== -1) clean = clean.substring(0, colonIdx).trim();
+          return clean;
+        }).filter(Boolean);
+
+        declaredFunctions.push({ name: fnName, paramCount: cleanParams.length });
+        out.push(`${indent}function ${fnName}(${cleanParams.join(', ')}) {`);
+        inFunction = true;
+        continue;
+      }
+
+      // Range loops: for x in start..end { or for x in start..=end {
+      const forRangeMatch = line.match(/^(\s*)for\s+([a-zA-Z0-9_$]+)\s+in\s+([a-zA-Z0-9_$.()+\-*\/ ]+)\.\.(=)?([a-zA-Z0-9_$.()+\-*\/ ]+)\s*\{$/);
+      if (forRangeMatch) {
+        const indent = forRangeMatch[1];
+        const v = forRangeMatch[2];
+        const start = this.cleanRustExpr(forRangeMatch[3].trim());
+        const isInclusive = Boolean(forRangeMatch[4]);
+        const end = this.cleanRustExpr(forRangeMatch[5].trim());
+        const op = isInclusive ? '<=' : '<';
+        out.push(`${indent}for (let ${v} = ${start}; ${v} ${op} ${end}; ${v}++) {`);
+        continue;
+      }
+
+      // Enumerate loop: for (i, x) in iter.iter().enumerate() { or for (i, &x) ...
+      const forEnumMatch = line.match(/^(\s*)for\s*\(\s*([a-zA-Z0-9_$]+)\s*,\s*(?:&|mut\s+)?([a-zA-Z0-9_$]+)\s*\)\s+in\s+([a-zA-Z0-9_$.()]+)(?:\.iter\(\))?\.enumerate\(\)\s*\{$/);
+      if (forEnumMatch) {
+        const indent = forEnumMatch[1];
+        const idxVar = forEnumMatch[2];
+        const itemVar = forEnumMatch[3];
+        const target = forEnumMatch[4].replace(/&/g, '').trim();
+        out.push(`${indent}for (let ${idxVar} = 0; ${idxVar} < ${target}.length; ${idxVar}++) { const ${itemVar} = ${target}[${idxVar}];`);
+        continue;
+      }
+
+      // Iterator loop: for x in arr { or for &x in &arr {
+      const forOfMatch = line.match(/^(\s*)for\s+(?:&|mut\s+)?([a-zA-Z0-9_$]+)\s+in\s+(?:&|mut\s+)?([a-zA-Z0-9_$.()]+)\s*\{$/);
+      if (forOfMatch && !line.includes('..')) {
+        const indent = forOfMatch[1];
+        const v = forOfMatch[2];
+        const target = forOfMatch[3].trim();
+        out.push(`${indent}for (const ${v} of ${target}) {`);
+        continue;
+      }
+
+      // While loop: while cond {
+      const whileMatch = line.match(/^(\s*)while\s+([^{]+)\s*\{$/);
+      if (whileMatch) {
+        const indent = whileMatch[1];
+        const cond = this.cleanRustExpr(whileMatch[2].trim());
+        out.push(`${indent}while (${cond}) {`);
+        continue;
+      }
+
+      // Loop: loop {
+      const loopMatch = line.match(/^(\s*)loop\s*\{$/);
+      if (loopMatch) {
+        out.push(`${loopMatch[1]}while (true) {`);
+        continue;
+      }
+
+      // If condition: if cond {
+      const ifMatch = line.match(/^(\s*)if\s+([^{]+)\s*\{$/);
+      if (ifMatch) {
+        const indent = ifMatch[1];
+        const cond = this.cleanRustExpr(ifMatch[2].trim());
+        out.push(`${indent}if (${cond}) {`);
+        continue;
+      }
+
+      // Else if condition: } else if cond { or else if cond {
+      const elseIfMatch = line.match(/^(\s*)(\}\s*)?else\s+if\s+([^{]+)\s*\{$/);
+      if (elseIfMatch) {
+        const indent = elseIfMatch[1];
+        const cond = this.cleanRustExpr(elseIfMatch[3].trim());
+        out.push(`${indent}} else if (${cond}) {`);
+        continue;
+      }
+
+      // Semicolon-less implicit return at the end of a function body
+      if (inFunction && !trimmed.endsWith(';') && !trimmed.endsWith('{') && !trimmed.endsWith('}') &&
+          !trimmed.startsWith('let') && !trimmed.startsWith('return') && !trimmed.startsWith('for') &&
+          !trimmed.startsWith('while') && !trimmed.startsWith('if') && !trimmed.startsWith('else')) {
+        const nextNonEmpty = lines.slice(i + 1).find(l => l.trim().length > 0)?.trim();
+        if (nextNonEmpty === '}') {
+          out.push(`${line.replace(trimmed, `return ${this.cleanRustExpr(trimmed)};`)}`);
+          continue;
+        }
+      }
+
+      // General Rust expression transformations
+      const processedLine = this.cleanRustExpr(line);
+      out.push(processedLine);
+    }
+
+    // Auto-invoke entry point
+    if (rs.includes('fn main(')) {
+      out.push('\nmain();');
+    } else if (declaredFunctions.length > 0) {
+      // If no main() is defined, check if any declared function is called at the top level
+      const primaryFn = declaredFunctions[0];
+      const hasCall = lines.some(l => l.includes(`${primaryFn.name}(`) && !l.includes('fn '));
+      if (!hasCall) {
+        // Synthesize a call with default sample args so the user sees live execution immediately
+        const dummyArgs = new Array(primaryFn.paramCount).fill(0).map((_, idx) => (idx === 0 ? '[-1, 0, 1, 2, -1, -4]' : '0'));
+        out.push(`\n${primaryFn.name}(${dummyArgs.join(', ')});`);
+      }
     }
 
     return out.join('\n');
   }
+
+  private cleanRustExpr(expr: string): string {
+    return expr
+      // Macros
+      .replace(/println!\(\s*"[^"]*"\s*,\s*([\s\S]*?)\)\s*;?$/g, 'console.log($1);')
+      .replace(/println!\(\s*"([^"]*)"\s*\)\s*;?$/g, 'console.log("$1");')
+      .replace(/print!\(\s*"[^"]*"\s*,\s*([\s\S]*?)\)\s*;?$/g, 'console.log($1);')
+      .replace(/eprintln!\(\s*"[^"]*"\s*,\s*([\s\S]*?)\)\s*;?$/g, 'console.error($1);')
+      // Collections & constructors
+      .replace(/vec!\[/g, '[')
+      .replace(/Vec::new\(\)/g, '[]')
+      .replace(/Vec::with_capacity\([^)]*\)/g, '[]')
+      .replace(/\.len\(\)/g, '.length')
+      .replace(/\.is_empty\(\)/g, '.length === 0')
+      // Numeric & saturating operations
+      .replace(/([a-zA-Z0-9_$]+)\.saturating_sub\((\d+)\)/g, 'Math.max(0, $1 - $2)')
+      .replace(/\.sort\(\);?/g, '.sort((a, b) => a - b);')
+      .replace(/\.sort_unstable\(\);?/g, '.sort((a, b) => a - b);')
+      .replace(/\.reverse\(\)/g, '.reverse()')
+      .replace(/std::cmp::min/g, 'Math.min')
+      .replace(/cmp::min/g, 'Math.min')
+      .replace(/std::cmp::max/g, 'Math.max')
+      .replace(/cmp::max/g, 'Math.max')
+      // Variable bindings & Rust types
+      .replace(/let\s+mut\s+([a-zA-Z0-9_$]+)(\s*:\s*[a-zA-Z0-9_<>, \[\]]+)?\s*=/g, 'let $1 =')
+      .replace(/let\s+([a-zA-Z0-9_$]+)(\s*:\s*[a-zA-Z0-9_<>, \[\]]+)?\s*=/g, 'let $1 =')
+      .replace(/let\s+\((?:mut\s+)?([a-zA-Z0-9_$]+),\s*(?:mut\s+)?([a-zA-Z0-9_$]+)\)\s*=\s*\((.+?),\s*(.+?)\);?/g, 'let [$1, $2] = [$3, $4];')
+      // Borrows & references (preserve logical && while stripping single &)
+      .replace(/&mut\s+/g, '')
+      .replace(/(?<!&)&([a-zA-Z0-9_$]+)/g, '$1')
+      // Type casts (e.g. as usize, as i32)
+      .replace(/\s+as\s+(?:usize|i32|i64|u32|u64|f32|f64|bool)/g, '');
+  }
 }
+

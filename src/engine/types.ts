@@ -24,6 +24,7 @@ export interface InferredPointer {
 
 export interface HeapObject {
   id: string; // e.g. "@heap:1"
+  name?: string; // e.g. "nums", "arr", "root"
   type: 'array' | 'object' | 'set' | 'map' | 'custom_node';
   elements?: any[]; // for arrays
   fields?: Record<string, any>; // for objects/nodes
@@ -68,6 +69,61 @@ export interface MemorySnapshot {
     result: string;
     isSatisfied?: boolean;
   };
+
+  // Dynamic Call Tree Topology (for Recursion Tree & Call Graph)
+  callTree?: CallTreeNode[];
+  activeCallTreeId?: string;
+
+  // Memory Diff vs previous tick
+  memoryDiff?: MemoryDiff;
+
+  // Real-time Debugging & Execution Diagnostics
+  diagnostics?: DebuggerDiagnostic[];
+
+  // Timeline & Scrubber telemetry
+  timelineTrack?: TimelinePoint[];
+}
+
+export interface CallTreeNode {
+  id: string; // e.g. "call_1"
+  parentId?: string;
+  functionName: string;
+  args: Record<string, any>;
+  returnValue?: any;
+  startTick: number;
+  endTick?: number;
+  depth: number;
+  status: 'active' | 'resolved' | 'pruned' | 'exception';
+  children: string[]; // child IDs
+}
+
+export interface MemoryDiff {
+  previousTick: number;
+  changedVariables: string[];
+  changedHeapObjects: string[];
+  heapDeltaBytes: number;
+  peakHeapBytes: number;
+  totalAllocatedObjects: number;
+  freedObjects: number;
+  mutationsCount: number;
+}
+
+export interface DebuggerDiagnostic {
+  type: 'info' | 'warning' | 'error' | 'anomaly';
+  title: string;
+  message: string;
+  line?: number;
+  suggestedFix?: string;
+}
+
+export interface TimelinePoint {
+  tick: number;
+  callDepth: number;
+  allocations: { id: string; label: string; isDealloc?: boolean }[];
+  mutationCount: number;
+  activeLine: number;
+  isBreakpoint?: boolean;
+  hasAnomaly?: boolean;
 }
 
 export interface TraceResult {
@@ -95,3 +151,4 @@ export interface CurriculumModule {
   quiz?: QuizQuestion;
   tags: string[];
 }
+
