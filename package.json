@@ -1,0 +1,111 @@
+{
+  "name": "fermas",
+  "displayName": "Fermas — Omniscient Code Execution & CS Concept Visualizer",
+  "description": "Interactive dynamic code execution, memory graph, and concurrency visualizer for CS education.",
+  "version": "0.1.0",
+  "publisher": "fermas",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Education",
+    "Programming Languages",
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "visualizer",
+    "education",
+    "algorithm",
+    "concurrency",
+    "event-loop",
+    "python",
+    "rust",
+    "javascript"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "fermas-explorer",
+          "title": "Fermas",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "fermas-explorer": [
+        {
+          "type": "webview",
+          "id": "fermas.visualizerView",
+          "name": "Fermas Visualizer"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "fermas.visualize",
+        "title": "Fermas: Visualize Active Code Execution",
+        "icon": "$(play)"
+      },
+      {
+        "command": "fermas.openCurriculum",
+        "title": "Fermas: Browse CS Curriculum & Puzzles",
+        "icon": "$(book)"
+      },
+      {
+        "command": "fermas.stepForward",
+        "title": "Fermas: Step Forward",
+        "icon": "$(arrow-right)"
+      },
+      {
+        "command": "fermas.stepBack",
+        "title": "Fermas: Step Back",
+        "icon": "$(arrow-left)"
+      },
+      {
+        "command": "fermas.resetTrace",
+        "title": "Fermas: Reset Simulation",
+        "icon": "$(debug-restart)"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "fermas.visualize",
+          "when": "editorTextFocus",
+          "group": "fermas@1"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "fermas.openCurriculum",
+          "when": "view == fermas.visualizerView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "fermas.visualize",
+          "when": "view == fermas.visualizerView",
+          "group": "navigation@2"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm.cmd run compile",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "serve:curriculum": "node server/demoServer.js",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.3.3"
+  }
+}
