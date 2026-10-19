@@ -1,26 +1,13 @@
-import { JsTracer } from './jsTracer';
-import { PythonTracer } from './pythonTracer';
-import { RustTracer } from './rustTracer';
+import { AstInterpreter } from './astInterpreter';
 import { SupportedLanguage, TraceResult } from './types';
 
 export class FermasEngine {
-  private jsTracer = new JsTracer();
-  private pyTracer = new PythonTracer();
-  private rustTracer = new RustTracer();
+  private interpreter = new AstInterpreter();
 
   public trace(code: string, language: SupportedLanguage): TraceResult {
     try {
-      if (language === 'python') {
-        const snapshots = this.pyTracer.trace(code);
-        return { language, code, snapshots };
-      } else if (language === 'rust') {
-        const snapshots = this.rustTracer.trace(code);
-        return { language, code, snapshots };
-      } else {
-        // javascript or typescript
-        const snapshots = this.jsTracer.trace(code, language);
-        return { language, code, snapshots };
-      }
+      const snapshots = this.interpreter.trace(code, language);
+      return { language, code, snapshots };
     } catch (err: any) {
       return {
         language,
