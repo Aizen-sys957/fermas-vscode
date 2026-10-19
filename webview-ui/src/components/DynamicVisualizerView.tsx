@@ -1,6 +1,4 @@
-import { useState } from 'react';
 import { useStore } from '../state/store';
-import type { HeapObject, InferredPointer } from '../types';
 
 export function DynamicVisualizerView() {
   const {
@@ -19,7 +17,6 @@ export function DynamicVisualizerView() {
     setSelectedHeapNodeId,
   } = useStore();
 
-  const [activeTab, setActiveTab] = useState<'memory' | 'concurrency'>('memory');
   const rates = [0.25, 0.5, 1, 2, 4] as const;
 
   if (!snapshot) {

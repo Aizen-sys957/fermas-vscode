@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import { useStore } from '../state/store';
-import type { CurriculumModule } from '../types';
 
 interface AlgorithmEntry {
   id: string;
@@ -10,7 +9,7 @@ interface AlgorithmEntry {
   description: string;
   timeComplexity: string;
   spaceComplexity: string;
-  languages: ('TS' | 'PY' | 'RS')[];
+  languages: ('TS' | 'PY' | 'RS' | 'JS')[];
   ticks: number;
   code: string;
 }

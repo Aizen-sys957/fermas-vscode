@@ -13,9 +13,9 @@ export function RecursionTreeView() {
     last,
     togglePlay,
     revealLine,
-    selectedCallNodeId,
     setSelectedCallNodeId,
   } = useStore();
+  const selectedCallNodeId = state.selectedCallNodeId;
 
   const [zoom, setZoom] = useState(100);
   const [layoutMode, setLayoutMode] = useState<'tree' | 'force'>('tree');

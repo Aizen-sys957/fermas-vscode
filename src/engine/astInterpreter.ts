@@ -25,6 +25,16 @@ export interface InterpreterFrame {
   parentFrame?: InterpreterFrame;
 }
 
+interface AsyncTask {
+  id: string;
+  type: 'microtask' | 'macrotask';
+  label: string;
+  line: number;
+  codeSnippet: string;
+  callbackNode?: ts.Node;
+  chained?: AsyncTask[];
+}
+
 export class AstInterpreter {
   private snapshots: MemorySnapshot[] = [];
   private heapStore = new Map<string, HeapObject>();
@@ -36,6 +46,9 @@ export class AstInterpreter {
   private userClasses = new Map<string, ts.ClassDeclaration>();
   private microtasks: string[] = [];
   private macrotasks: string[] = [];
+  private microtaskQueue: AsyncTask[] = [];
+  private macrotaskQueue: AsyncTask[] = [];
+  private activeIndicesMap = new Map<string, { index: number; type: 'read' | 'write' | 'compare' }[]>();
   private unpolledFutures: string[] = [];
   private arrayIndexAccessMap = new Map<string, Set<string>>(); // arrayVarName -> Set of indexVarNames
   private stepCount = 0;
@@ -61,6 +74,9 @@ export class AstInterpreter {
     this.userClasses.clear();
     this.microtasks = [];
     this.macrotasks = [];
+    this.microtaskQueue = [];
+    this.macrotaskQueue = [];
+    this.activeIndicesMap.clear();
     this.unpolledFutures = [];
     this.arrayIndexAccessMap.clear();
     this.stepCount = 0;
@@ -212,8 +228,108 @@ export class AstInterpreter {
         }
       }
 
+      // Check for setTimeout
+      if (ts.isCallExpression(expr) && ts.isIdentifier(expr.expression) && expr.expression.text === 'setTimeout') {
+        const cbArg = expr.arguments[0];
+        const delayArg = expr.arguments[1] ? expr.arguments[1].getText(this.sourceFile) : '0';
+        const desc = this.summarizeCallback(cbArg);
+        const label = `setTimeout → ${desc} ${delayArg}ms`.trim();
+        const cbLine = this.findCallbackLine(cbArg, line);
+        const task: AsyncTask = {
+          id: `macro-${this.macrotaskQueue.length + 1}`,
+          type: 'macrotask',
+          label,
+          line: cbLine,
+          codeSnippet: this.getLineText(cbLine),
+          callbackNode: cbArg
+        };
+        this.macrotaskQueue.push(task);
+        this.recordSnapshot(
+          line,
+          lineText,
+          'async_tick',
+          'setTimeout(..., 0) is enqueued as a MACROTASK. A 0ms delay does not mean "now" — it cannot run while the call stack is busy.',
+          frame,
+          '[Macrotask enqueued]'
+        );
+        return 'none';
+      }
+
+      // Check for Promise chain: Promise.resolve().then(...)
+      if (ts.isCallExpression(expr)) {
+        const chain = this.extractPromiseChain(expr);
+        if (chain) {
+          this.evalExpression(chain.root, frame);
+          if (chain.thenArgs.length > 0) {
+            const cb0 = chain.thenArgs[0];
+            const label0 = `then → ${this.summarizeCallback(cb0)}`;
+            const cbLine0 = this.findCallbackLine(cb0, line);
+            const chainedList: AsyncTask[] = [];
+            for (let i = 1; i < chain.thenArgs.length; i++) {
+              const cbi = chain.thenArgs[i];
+              const labeli = `then → ${this.summarizeCallback(cbi)}`;
+              const cbLinei = this.findCallbackLine(cbi, line);
+              chainedList.push({
+                id: `micro-${i + 1}`,
+                type: 'microtask',
+                label: labeli,
+                line: cbLinei,
+                codeSnippet: this.getLineText(cbLinei),
+                callbackNode: cbi,
+                chained: []
+              });
+            }
+            const task0: AsyncTask = {
+              id: 'micro-1',
+              type: 'microtask',
+              label: label0,
+              line: cbLine0,
+              codeSnippet: this.getLineText(cbLine0),
+              callbackNode: cb0,
+              chained: chainedList
+            };
+            this.microtaskQueue.push(task0);
+            this.recordSnapshot(
+              line,
+              lineText,
+              'async_tick',
+              'The promise is already fulfilled, so its .then callback is queued as a MICROTASK immediately. Only Microtask #1 is queued here — #2 registers when #1 returns.',
+              frame,
+              '[Microtask enqueued — high priority]'
+            );
+            return 'none';
+          }
+        }
+      }
+
+      // Check for queueMicrotask(...)
+      if (ts.isCallExpression(expr) && ts.isIdentifier(expr.expression) && expr.expression.text === 'queueMicrotask') {
+        const cbArg = expr.arguments[0];
+        const desc = this.summarizeCallback(cbArg);
+        const label = `queueMicrotask → ${desc}`;
+        const cbLine = this.findCallbackLine(cbArg, line);
+        const task: AsyncTask = {
+          id: `micro-${this.microtaskQueue.length + 1}`,
+          type: 'microtask',
+          label,
+          line: cbLine,
+          codeSnippet: this.getLineText(cbLine),
+          callbackNode: cbArg
+        };
+        this.microtaskQueue.push(task);
+        this.recordSnapshot(line, lineText, 'async_tick', 'queueMicrotask() enqueued a high-priority microtask callback.', frame, '[Microtask enqueued]');
+        return 'none';
+      }
+
+      const prevOutLen = this.stdoutLog.length;
       this.evalExpression(expr, frame);
-      this.recordSnapshot(line, lineText, 'step', `Executed: ${lineText.trim()}`, frame);
+
+      if (this.stdoutLog.length > prevOutLen) {
+        const latestLog = this.stdoutLog[this.stdoutLog.length - 1];
+        this.recordSnapshot(line, lineText, 'step', `Standard output emitted: ${latestLog}`, frame, `[stdout: ${latestLog}]`);
+      } else {
+        this.recordSnapshot(line, lineText, 'step', `Executed: ${lineText.trim()}`, frame);
+      }
       return 'none';
     }
 
@@ -1119,36 +1235,178 @@ export class AstInterpreter {
     return undefined;
   }
 
-  private drainEventLoop(frame: InterpreterFrame) {
-    while (this.microtasks.length > 0) {
-      const task = this.microtasks.shift()!;
-      const logMatch = task.match(/console\.log\((.*?)\)/);
-      if (logMatch) {
-        this.stdoutLog.push(logMatch[1].replace(/["']/g, '').trim());
+  private extractPromiseChain(expr: ts.CallExpression): { root: ts.Expression; thenArgs: ts.Expression[] } | null {
+    if (ts.isPropertyAccessExpression(expr.expression) && expr.expression.name.text === 'then') {
+      const parent = expr.expression.expression;
+      if (ts.isCallExpression(parent)) {
+        const inner = this.extractPromiseChain(parent);
+        if (inner) {
+          return {
+            root: inner.root,
+            thenArgs: [...inner.thenArgs, ...expr.arguments]
+          };
+        }
       }
-      this.recordSnapshot(
-        this.originalLines.length,
-        `// Microtask: ${task}`,
-        'async_tick',
-        `[Microtask Queue] Draining microtask '${task}' before any macrotasks run.`,
-        frame,
-        `[Microtask: ${task}]`
-      );
+      return {
+        root: parent,
+        thenArgs: [...expr.arguments]
+      };
     }
-    while (this.macrotasks.length > 0) {
-      const task = this.macrotasks.shift()!;
-      const logMatch = task.match(/console\.log\((.*?)\)/);
-      if (logMatch) {
-        this.stdoutLog.push(logMatch[1].replace(/["']/g, '').trim());
+    return null;
+  }
+
+  private summarizeCallback(cb?: ts.Node): string {
+    if (!cb) return 'Callback';
+    const text = cb.getText(this.sourceFile);
+    const logMatch = text.match(/console\.log\((.*?)\)/);
+    if (logMatch) {
+      let msg = logMatch[1].trim();
+      if (msg.length > 32) msg = msg.slice(0, 30) + '…';
+      return `console.log(${msg})`;
+    }
+    const clean = text.replace(/[\r\n\t]+/g, ' ').slice(0, 32);
+    return clean || 'Callback';
+  }
+
+  private findCallbackLine(node: ts.Node | undefined, fallbackLine: number): number {
+    if (!node) return fallbackLine;
+    if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+      if (ts.isBlock(node.body) && node.body.statements.length > 0) {
+        return this.getLineNumber(node.body.statements[0]);
       }
-      this.recordSnapshot(
-        this.originalLines.length,
-        `// Macrotask: ${task}`,
-        'async_tick',
-        `[Macrotask Queue] Microtask queue empty. Executing macrotask '${task}'.`,
-        frame,
-        `[Macrotask: ${task}]`
-      );
+      return this.getLineNumber(node.body);
+    }
+    return this.getLineNumber(node);
+  }
+
+  private executeCallbackNode(node: ts.Node | undefined, frame: InterpreterFrame) {
+    if (!node) return;
+    if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+      if (ts.isBlock(node.body)) {
+        for (const stmt of node.body.statements) {
+          if (ts.isExpressionStatement(stmt)) {
+            this.evalExpression(stmt.expression, frame);
+          } else {
+            this.executeStatement(stmt, frame);
+          }
+        }
+      } else {
+        this.evalExpression(node.body, frame);
+      }
+    } else if (ts.isCallExpression(node)) {
+      this.evalExpression(node, frame);
+    }
+  }
+
+  private recordActiveIndex(arr: any[], index: number, type: 'read' | 'write' | 'compare') {
+    const heapId = this.rawObjectToHeapId.get(arr);
+    if (heapId) {
+      if (!this.activeIndicesMap.has(heapId)) {
+        this.activeIndicesMap.set(heapId, []);
+      }
+      this.activeIndicesMap.get(heapId)!.push({ index, type });
+    }
+  }
+
+  private drainEventLoop(frame: InterpreterFrame) {
+    let microIndex = 1;
+    let macroIndex = 1;
+
+    if (this.microtaskQueue.length > 0) {
+      while (this.microtaskQueue.length > 0) {
+        const task = this.microtaskQueue.shift()!;
+
+        const asyncFrame: InterpreterFrame = {
+          frameId: `frame-micro-${microIndex++}`,
+          functionName: '(microtask) → then',
+          line: task.line,
+          rawScope: {}
+        };
+        this.callStack.push(asyncFrame);
+
+        this.executeCallbackNode(task.callbackNode, asyncFrame);
+
+        if (task.chained && task.chained.length > 0) {
+          const nextTask = task.chained.shift()!;
+          nextTask.chained = task.chained;
+          this.microtaskQueue.push(nextTask);
+        }
+
+        const isLastMicro = this.microtaskQueue.length === 0;
+        const explanation = isLastMicro
+          ? 'The microtask queue is drained to emptiness. Microtask runs before any timer, even though the timer was scheduled first.'
+          : `Microtask #${microIndex - 1} runs. Returning from it resolves the chained promise, which queues next microtask behind the current one.`;
+
+        this.recordSnapshot(
+          task.line,
+          task.codeSnippet || this.getLineText(task.line),
+          'async_tick',
+          explanation,
+          asyncFrame,
+          '[Microtask executing]'
+        );
+
+        this.callStack.pop();
+      }
+    } else {
+      while (this.microtasks.length > 0) {
+        const task = this.microtasks.shift()!;
+        const logMatch = task.match(/console\.log\((.*?)\)/);
+        if (logMatch) {
+          this.stdoutLog.push(logMatch[1].replace(/["']/g, '').trim());
+        }
+        this.recordSnapshot(
+          this.originalLines.length,
+          `// Microtask: ${task}`,
+          'async_tick',
+          `[Microtask Queue] Draining microtask '${task}' before any macrotasks run.`,
+          frame,
+          `[Microtask: ${task}]`
+        );
+      }
+    }
+
+    if (this.macrotaskQueue.length > 0) {
+      while (this.macrotaskQueue.length > 0) {
+        const task = this.macrotaskQueue.shift()!;
+
+        const asyncFrame: InterpreterFrame = {
+          frameId: `frame-macro-${macroIndex++}`,
+          functionName: '(timer) → setTimeout',
+          line: task.line,
+          rawScope: {}
+        };
+        this.callStack.push(asyncFrame);
+
+        this.executeCallbackNode(task.callbackNode, asyncFrame);
+
+        this.recordSnapshot(
+          task.line,
+          task.codeSnippet || this.getLineText(task.line),
+          'async_tick',
+          'Only now, with the microtask queue empty, does the event loop pick up the macrotask. This delay is microtask starvation.',
+          asyncFrame,
+          '[Macrotask executing]'
+        );
+
+        this.callStack.pop();
+      }
+    } else {
+      while (this.macrotasks.length > 0) {
+        const task = this.macrotasks.shift()!;
+        const logMatch = task.match(/console\.log\((.*?)\)/);
+        if (logMatch) {
+          this.stdoutLog.push(logMatch[1].replace(/["']/g, '').trim());
+        }
+        this.recordSnapshot(
+          this.originalLines.length,
+          `// Macrotask: ${task}`,
+          'async_tick',
+          `[Macrotask Queue] Microtask queue empty. Executing macrotask '${task}'.`,
+          frame,
+          `[Macrotask: ${task}]`
+        );
+      }
     }
   }
 
@@ -1294,6 +1552,31 @@ export class AstInterpreter {
       // Track unpolled lazy futures (Rust Pull Model lesson)
       if (line.includes('let') && line.includes('fetch_data_async') && !line.includes('.await')) {
         this.unpolledFutures.push('fut');
+      }
+
+      // Tuple destructuring: let (mut a, mut b) = (x, y);
+      const tupleMatch = line.match(/^(\s*)let\s+\((?:mut\s+)?([a-zA-Z0-9_$]+),\s*(?:mut\s+)?([a-zA-Z0-9_$]+)\)\s*=\s*\((.+)\);?\s*$/);
+      if (tupleMatch) {
+        const indent = tupleMatch[1];
+        const v1 = tupleMatch[2];
+        const v2 = tupleMatch[3];
+        const rhs = tupleMatch[4];
+        let depth = 0;
+        let splitIdx = -1;
+        for (let k = 0; k < rhs.length; k++) {
+          if (rhs[k] === '(' || rhs[k] === '[') depth++;
+          else if (rhs[k] === ')' || rhs[k] === ']') depth--;
+          else if (rhs[k] === ',' && depth === 0) {
+            splitIdx = k;
+            break;
+          }
+        }
+        if (splitIdx !== -1) {
+          const e1 = this.cleanRustExpr(rhs.slice(0, splitIdx).trim());
+          const e2 = this.cleanRustExpr(rhs.slice(splitIdx + 1).trim());
+          out.push(`${indent}let ${v1} = ${e1}; let ${v2} = ${e2};`);
+          continue;
+        }
       }
 
       // fn name(...) -> ... {
